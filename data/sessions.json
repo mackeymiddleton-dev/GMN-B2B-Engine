@@ -8452,5 +8452,295 @@
     "city": null,
     "contactId": null,
     "createdAt": 1776812912082
+  },
+  "a2c96619-60ce-4561-937f-1baaa803690d": {
+    "sessionId": "a2c96619-60ce-4561-937f-1baaa803690d",
+    "conversationHistory": [
+      {
+        "role": "user",
+        "content": "__init__"
+      },
+      {
+        "role": "assistant",
+        "content": "Hey there! Welcome to your practice analysis demo.\n\nTo get started, what's the name of your practice exactly as it appears on Google Maps?"
+      },
+      {
+        "role": "user",
+        "content": "ZB electric"
+      },
+      {
+        "role": "assistant",
+        "content": "Hmm, it looks like we might be talking to the wrong crowd — I'm built specifically for audiology practices, and ZB Electric sounds like it might be in a different industry!\n\nAre you in the hearing care or audiology space? If so, what's the name of your practice as it appears on Google Maps?"
+      },
+      {
+        "role": "user",
+        "content": "Guu"
+      },
+      {
+        "role": "assistant",
+        "content": "Got it — and what city is your practice located in?"
+      }
+    ],
+    "status": "active",
+    "scanStatus": "complete",
+    "researchStatus": "complete",
+    "researchData": {
+      "name": "TZ Electric, Inc",
+      "rating": 5,
+      "reviews": 338,
+      "photos": 10,
+      "websiteListed": true,
+      "hoursSet": true,
+      "address": "5079 NY-32, Catskill, NY 12414, USA",
+      "lat": 42.21996610000001,
+      "lng": -73.9888261,
+      "placeId": "ChIJ__8T3Hyl3YkRTISjTyO5ZtU",
+      "competitors": [
+        {
+          "name": "HearingLife of Albany NY",
+          "reviews": 200,
+          "rating": 4.8,
+          "placeId": "ChIJP-J_-Lt03okRv4iXBXIWTWo"
+        },
+        {
+          "name": "Hudson Valley Hearing Aid Center, A Part of Beltone",
+          "reviews": 166,
+          "rating": 4.9,
+          "placeId": "ChIJBRnIdeEI3YkRG2DjY0tjCAo"
+        },
+        {
+          "name": "Audiologic Solutions",
+          "reviews": 118,
+          "rating": 4.9,
+          "placeId": "ChIJ3-m7_MwJ3okRvs5ue68J1B8"
+        },
+        {
+          "name": "HearUSA",
+          "reviews": 97,
+          "rating": 5,
+          "placeId": "ChIJS95ptpsP3YkRcD4Hr6v3Pc0"
+        },
+        {
+          "name": "Kingston Audiology",
+          "reviews": 85,
+          "rating": 4.7,
+          "placeId": "ChIJl7LOaIEF3YkRzvGkNzHDAWY"
+        }
+      ],
+      "competitorSummary": "ZB electric is ranked 1st out of 6 practices by review count",
+      "prospectRank": 1,
+      "populationOver65": 45000,
+      "estimatedHearingLoss": 14850,
+      "messagingEnabled": false,
+      "profileScore": "okay"
+    },
+    "scanResults": {
+      "gridResults": [
+        {
+          "lat": 42.14746610000001,
+          "lng": -74.08672360272608,
+          "rank": null,
+          "topBusinesses": []
+        },
+        {
+          "lat": 42.14746610000001,
+          "lng": -74.03777485136304,
+          "rank": null,
+          "topBusinesses": []
+        },
+        {
+          "lat": 42.14746610000001,
+          "lng": -73.9888261,
+          "rank": null,
+          "topBusinesses": []
+        },
+        {
+          "lat": 42.14746610000001,
+          "lng": -73.93987734863695,
+          "rank": null,
+          "topBusinesses": []
+        },
+        {
+          "lat": 42.14746610000001,
+          "lng": -73.89092859727391,
+          "rank": null,
+          "topBusinesses": []
+        },
+        {
+          "lat": 42.183716100000005,
+          "lng": -74.08672360272608,
+          "rank": null,
+          "topBusinesses": []
+        },
+        {
+          "lat": 42.183716100000005,
+          "lng": -74.03777485136304,
+          "rank": null,
+          "topBusinesses": []
+        },
+        {
+          "lat": 42.183716100000005,
+          "lng": -73.9888261,
+          "rank": null,
+          "topBusinesses": []
+        },
+        {
+          "lat": 42.183716100000005,
+          "lng": -73.93987734863695,
+          "rank": null,
+          "topBusinesses": []
+        },
+        {
+          "lat": 42.183716100000005,
+          "lng": -73.89092859727391,
+          "rank": null,
+          "topBusinesses": []
+        },
+        {
+          "lat": 42.21996610000001,
+          "lng": -74.08672360272608,
+          "rank": null,
+          "topBusinesses": []
+        },
+        {
+          "lat": 42.21996610000001,
+          "lng": -74.03777485136304,
+          "rank": null,
+          "topBusinesses": []
+        },
+        {
+          "lat": 42.21996610000001,
+          "lng": -73.9888261,
+          "rank": null,
+          "topBusinesses": []
+        },
+        {
+          "lat": 42.21996610000001,
+          "lng": -73.93987734863695,
+          "rank": null,
+          "topBusinesses": []
+        },
+        {
+          "lat": 42.21996610000001,
+          "lng": -73.89092859727391,
+          "rank": null,
+          "topBusinesses": [
+            {
+              "name": "Ascent Hearing Center",
+              "rank": 1,
+              "rating": 2.5
+            },
+            {
+              "name": "Miracle-Ear Hearing Aid Center",
+              "rank": 2,
+              "rating": 4.9
+            }
+          ]
+        },
+        {
+          "lat": 42.25621610000001,
+          "lng": -74.08672360272608,
+          "rank": null,
+          "topBusinesses": []
+        },
+        {
+          "lat": 42.25621610000001,
+          "lng": -74.03777485136304,
+          "rank": null,
+          "topBusinesses": []
+        },
+        {
+          "lat": 42.25621610000001,
+          "lng": -73.9888261,
+          "rank": null,
+          "topBusinesses": []
+        },
+        {
+          "lat": 42.25621610000001,
+          "lng": -73.93987734863695,
+          "rank": null,
+          "topBusinesses": []
+        },
+        {
+          "lat": 42.25621610000001,
+          "lng": -73.89092859727391,
+          "rank": null,
+          "topBusinesses": []
+        },
+        {
+          "lat": 42.292466100000006,
+          "lng": -74.08672360272608,
+          "rank": null,
+          "topBusinesses": []
+        },
+        {
+          "lat": 42.292466100000006,
+          "lng": -74.03777485136304,
+          "rank": null,
+          "topBusinesses": []
+        },
+        {
+          "lat": 42.292466100000006,
+          "lng": -73.9888261,
+          "rank": null,
+          "topBusinesses": []
+        },
+        {
+          "lat": 42.292466100000006,
+          "lng": -73.93987734863695,
+          "rank": null,
+          "topBusinesses": []
+        },
+        {
+          "lat": 42.292466100000006,
+          "lng": -73.89092859727391,
+          "rank": null,
+          "topBusinesses": []
+        }
+      ],
+      "visibleTop3": 0,
+      "visibleTop10": 0,
+      "invisible": 25,
+      "totalPoints": 25,
+      "percentInvisible": 100,
+      "topCompetitor": {
+        "name": "Ascent Hearing Center",
+        "visibleIn": 1
+      },
+      "averageRankWhereVisible": null,
+      "scanUrl": "http://localhost:3000/scan/a2c96619-60ce-4561-937f-1baaa803690d"
+    },
+    "currentStep": "onboarding-3",
+    "name": null,
+    "phone": null,
+    "practiceName": "ZB electric",
+    "city": "Guu",
+    "contactId": null,
+    "createdAt": 1776812943978
+  },
+  "0583ce45-7764-4de2-9d68-cc10feacfef9": {
+    "sessionId": "0583ce45-7764-4de2-9d68-cc10feacfef9",
+    "conversationHistory": [
+      {
+        "role": "user",
+        "content": "__init__"
+      },
+      {
+        "role": "assistant",
+        "content": "Hey there! Welcome to your practice analysis demo.\n\nTo get started, what's the name of your practice exactly as it appears on Google Maps?"
+      }
+    ],
+    "status": "active",
+    "scanStatus": "idle",
+    "researchStatus": "idle",
+    "researchData": null,
+    "scanResults": null,
+    "currentStep": "onboarding-1",
+    "name": null,
+    "phone": null,
+    "practiceName": null,
+    "city": null,
+    "contactId": null,
+    "createdAt": 1776815706050
   }
 }
