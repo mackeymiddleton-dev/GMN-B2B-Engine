@@ -244,7 +244,16 @@
   },
   "6875ce43-e326-469b-8581-aacb0bf8231b": {
     "sessionId": "6875ce43-e326-469b-8581-aacb0bf8231b",
-    "conversationHistory": [],
+    "conversationHistory": [
+      {
+        "role": "user",
+        "content": "__init__"
+      },
+      {
+        "role": "assistant",
+        "content": "Hey there! Welcome to your practice analysis demo with Powered Up AI.\n\nLet's start simple — what's the name of your practice, exactly as it appears on Google Maps?"
+      }
+    ],
     "status": "active",
     "scanStatus": "idle",
     "researchStatus": "idle",
@@ -257,5 +266,30 @@
     "city": null,
     "contactId": null,
     "createdAt": 1776799684442
+  },
+  "cafde782-be17-4aaa-9a9f-4019aa7c3f76": {
+    "sessionId": "cafde782-be17-4aaa-9a9f-4019aa7c3f76",
+    "conversationHistory": [
+      {
+        "role": "user",
+        "content": "__init__"
+      },
+      {
+        "role": "assistant",
+        "content": "Hey there! Welcome to your practice revenue analysis.\n\nTo get started, what's the name of your practice exactly as it appears on Google Maps?"
+      }
+    ],
+    "status": "active",
+    "scanStatus": "idle",
+    "researchStatus": "idle",
+    "researchData": null,
+    "scanResults": null,
+    "currentStep": "onboarding-1",
+    "name": null,
+    "phone": null,
+    "practiceName": null,
+    "city": null,
+    "contactId": null,
+    "createdAt": 1776800076691
   }
 }
