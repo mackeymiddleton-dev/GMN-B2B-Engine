@@ -1,4 +1,3 @@
-const fetch = require('node-fetch');
 const config = require('./config');
 
 // Fallback 65+ population estimates for top metro areas
