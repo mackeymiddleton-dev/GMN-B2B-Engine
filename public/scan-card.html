@@ -454,9 +454,25 @@ function render(d) {
   }
 
   // ── Derived metrics ──
+  // Monthly searches: ~11% of 65+ population searches for hearing care annually ÷ 12
   const monthlySearches = Math.max(400, Math.round(pop65 * 0.11 / 12 / 50) * 50);
-  const pctToComp = Math.round((sr.totalPoints - (sr.visibleTop3 || 0)) / (sr.totalPoints || 25) * 100);
-  const newPatientsPerMo = Math.max(20, Math.round(pop65 / 100 / 12 * 0.4));
+
+  // % going to a competitor: sourced directly from scan invisible%
+  // (spots where practice doesn't appear in top 20 = patients who find a competitor first)
+  const pctToComp = sr.percentInvisible || Math.round((sr.invisible || 0) / (sr.totalPoints || 25) * 100);
+
+  // New patients/mo for top competitor: blends review-share capture + population market size
+  // Base market: (pop65 / 100) patients/month * 40% booking rate = market baseline
+  // Review multiplier: competitor's share of total reviews vs practice (capped at 2.5×)
+  const totalReviews = compReviews + yourReviews;
+  const compReviewShare = totalReviews > 0 ? compReviews / totalReviews : 0.7;
+  const baseMktPerMo = pop65 / 100 / 12 * 0.4;
+  const reviewMultiplier = Math.min(2.5, totalReviews > 0 ? compReviewShare / 0.5 : 1.5);
+  const newPatientsPerMo = Math.max(20, Math.round(baseMktPerMo * reviewMultiplier));
+
+  console.assert(pctToComp >= 0 && pctToComp <= 100, 'pctToComp out of range:', pctToComp);
+  console.assert(newPatientsPerMo >= 20, 'newPatientsPerMo below floor:', newPatientsPerMo);
+  console.log('[ScanCard] metrics:', { monthlySearches, pctToComp, newPatientsPerMo, compReviewShare: compReviewShare.toFixed(2) });
 
   document.getElementById('monthly-searches').textContent = formatNum(monthlySearches);
   document.getElementById('pct-competitor').textContent = pctToComp + '%';
