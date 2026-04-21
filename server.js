@@ -47,8 +47,34 @@ app.post('/api/start', (req, res) => {
   res.json({ sessionId, createdAt: session.createdAt });
 });
 
+// ─── Places disambiguation endpoint ───────────────────────────────────────────
+
+app.post('/api/places/search', async (req, res) => {
+  const { practiceName, city } = req.body;
+  const apiKey = process.env.GOOGLE_PLACES_KEY;
+  if (!apiKey || !practiceName || !city) return res.json({ results: [] });
+
+  try {
+    const query = encodeURIComponent(`${practiceName} ${city}`);
+    const url = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${query}&key=${apiKey}`;
+    const resp = await fetch(url);
+    const data = await resp.json();
+    const results = (data.results || []).slice(0, 5).map(p => ({
+      placeId: p.place_id,
+      name: p.name,
+      address: p.formatted_address || '',
+      rating: p.rating || null,
+      userRatingsTotal: p.user_ratings_total || 0
+    }));
+    res.json({ results });
+  } catch (err) {
+    console.error('[Places Search] Error:', err.message);
+    res.json({ results: [] });
+  }
+});
+
 app.post('/api/session/update', async (req, res) => {
-  const { sessionId, name, phone, practiceName, city, currentStep } = req.body;
+  const { sessionId, name, phone, practiceName, city, currentStep, confirmedPlaceId } = req.body;
   const session = sessions.get(sessionId);
   if (!session) return res.status(404).json({ error: 'Session not found' });
 
@@ -58,6 +84,7 @@ app.post('/api/session/update', async (req, res) => {
   if (practiceName !== undefined) updates.practiceName = practiceName;
   if (city !== undefined) updates.city = city;
   if (currentStep !== undefined) updates.currentStep = currentStep;
+  if (confirmedPlaceId !== undefined) updates.confirmedPlaceId = confirmedPlaceId;
 
   const hadPractice = !!(session.practiceName && session.city);
   sessions.update(sessionId, updates);
@@ -73,7 +100,7 @@ app.post('/api/session/update', async (req, res) => {
   // Trigger research + scan when both practiceName and city available for the first time
   if (!hadPractice && updated.practiceName && updated.city) {
     const snap = sessions.get(sessionId);
-    runResearch(snap, updated.practiceName, updated.city).catch(() => {});
+    runResearch(snap, updated.practiceName, updated.city, updated.confirmedPlaceId || null).catch(() => {});
     startScan(snap, updated.practiceName, updated.city, config.scanKeyword).catch(() => {});
 
     // Update GHL contact with practice details

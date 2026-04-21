@@ -85,7 +85,7 @@ async function getCensusData(city) {
   }
 }
 
-async function runResearch(session, practiceName, city) {
+async function runResearch(session, practiceName, city, confirmedPlaceId = null) {
   const sessions = require('./sessions');
   const apiKey = process.env.GOOGLE_PLACES_KEY;
 
@@ -121,19 +121,47 @@ async function runResearch(session, practiceName, city) {
   }
 
   try {
-    // Run Places search + census in parallel
-    const [placeResults, pop65] = await Promise.all([
-      searchPlaces(`${practiceName} ${city}`, apiKey),
-      getCensusData(city)
-    ]);
+    let place, details, pop65, usedPlaceId;
 
-    if (!placeResults.length) {
-      sessions.update(session.sessionId, { researchStatus: 'failed' });
-      return;
+    if (confirmedPlaceId) {
+      // User confirmed exact listing — skip fuzzy search, go straight to Place Details
+      console.log(`[Research] Using confirmed placeId: ${confirmedPlaceId}`);
+      [details, pop65] = await Promise.all([
+        fetchPlaceDetails(confirmedPlaceId, apiKey),
+        getCensusData(city)
+      ]);
+      if (!details) {
+        sessions.update(session.sessionId, { researchStatus: 'failed' });
+        return;
+      }
+      usedPlaceId = confirmedPlaceId;
+      // Build a normalised `place` object from the details response
+      place = {
+        place_id: confirmedPlaceId,
+        name: details.name,
+        rating: details.rating || 0,
+        user_ratings_total: details.user_ratings_total || 0,
+        formatted_address: details.formatted_address || city,
+        geometry: details.geometry
+      };
+    } else {
+      // Fuzzy text search fallback
+      const [placeResults, pop65_] = await Promise.all([
+        searchPlaces(`${practiceName} ${city}`, apiKey),
+        getCensusData(city)
+      ]);
+      pop65 = pop65_;
+
+      if (!placeResults.length) {
+        sessions.update(session.sessionId, { researchStatus: 'failed' });
+        return;
+      }
+
+      place = placeResults[0];
+      usedPlaceId = place.place_id;
+      details = await fetchPlaceDetails(place.place_id, apiKey);
     }
 
-    const place = placeResults[0];
-    const details = await fetchPlaceDetails(place.place_id, apiKey);
     const lat = place.geometry?.location?.lat;
     const lng = place.geometry?.location?.lng;
 
@@ -170,7 +198,7 @@ async function runResearch(session, practiceName, city) {
       address: place.formatted_address || '',
       lat,
       lng,
-      placeId: place.place_id,
+      placeId: usedPlaceId,
       competitors,
       competitorSummary: `${practiceName} is ranked ${prospectRank}${ordinal(prospectRank)} out of ${allByReviews.length} practices by review count`,
       prospectRank,
@@ -181,7 +209,7 @@ async function runResearch(session, practiceName, city) {
     };
 
     sessions.update(session.sessionId, { researchData, researchStatus: 'complete' });
-    console.log(`[Research] Complete for ${practiceName} in ${city}`);
+    console.log(`[Research] Complete for ${practiceName} in ${city}${confirmedPlaceId ? ' (confirmed placeId)' : ''}`);
   } catch (err) {
     console.error('[Research] Error:', err.message);
     sessions.update(session.sessionId, { researchStatus: 'failed' });
