@@ -8294,5 +8294,138 @@
     "city": null,
     "contactId": null,
     "createdAt": 1776812449105
+  },
+  "a411df57-95fe-4cdc-9dfb-d0a44d151e79": {
+    "sessionId": "a411df57-95fe-4cdc-9dfb-d0a44d151e79",
+    "conversationHistory": [
+      {
+        "role": "user",
+        "content": "__init__"
+      },
+      {
+        "role": "assistant",
+        "content": "Hey there! Welcome to your practice revenue analysis.\n\nTo get started, what's the name of your practice exactly as it appears on Google Maps?"
+      }
+    ],
+    "status": "active",
+    "scanStatus": "idle",
+    "researchStatus": "idle",
+    "researchData": null,
+    "scanResults": null,
+    "currentStep": "onboarding-1",
+    "name": null,
+    "phone": null,
+    "practiceName": null,
+    "city": null,
+    "contactId": null,
+    "createdAt": 1776812512041
+  },
+  "ffbeed0f-fee2-44c1-9d99-4cfd4b9726af": {
+    "sessionId": "ffbeed0f-fee2-44c1-9d99-4cfd4b9726af",
+    "conversationHistory": [
+      {
+        "role": "user",
+        "content": "__init__"
+      },
+      {
+        "role": "assistant",
+        "content": "Hey there! Let's get started.\n\nWhat's the name of your practice as it appears on Google Maps?"
+      }
+    ],
+    "status": "active",
+    "scanStatus": "idle",
+    "researchStatus": "idle",
+    "researchData": null,
+    "scanResults": null,
+    "currentStep": "onboarding-1",
+    "name": null,
+    "phone": null,
+    "practiceName": null,
+    "city": null,
+    "contactId": null,
+    "createdAt": 1776812525214
+  },
+  "052c62c6-f009-4129-bb91-338be1093ae0": {
+    "sessionId": "052c62c6-f009-4129-bb91-338be1093ae0",
+    "conversationHistory": [
+      {
+        "role": "user",
+        "content": "__init__"
+      },
+      {
+        "role": "assistant",
+        "content": "Hey there! Welcome to your practice revenue analysis. This will take about 10 minutes and by the end you'll have a clear picture of where the gaps are.\n\nTo get started — what's the name of your practice, exactly as it appears on Google Maps?"
+      }
+    ],
+    "status": "active",
+    "scanStatus": "idle",
+    "researchStatus": "idle",
+    "researchData": null,
+    "scanResults": null,
+    "currentStep": "onboarding-1",
+    "name": null,
+    "phone": null,
+    "practiceName": null,
+    "city": null,
+    "contactId": null,
+    "createdAt": 1776812529509
+  },
+  "75b54298-1dee-410f-ae7b-896c74928cc0": {
+    "sessionId": "75b54298-1dee-410f-ae7b-896c74928cc0",
+    "conversationHistory": [
+      {
+        "role": "user",
+        "content": "__init__"
+      },
+      {
+        "role": "assistant",
+        "content": "Hey there! Welcome to your practice analysis demo.\n\nTo get started, what's the name of your practice exactly as it appears on Google Maps?"
+      }
+    ],
+    "status": "active",
+    "scanStatus": "idle",
+    "researchStatus": "idle",
+    "researchData": null,
+    "scanResults": null,
+    "currentStep": "onboarding-1",
+    "name": null,
+    "phone": null,
+    "practiceName": null,
+    "city": null,
+    "contactId": null,
+    "createdAt": 1776812533741
+  },
+  "ad229896-4cd5-46b1-b0ff-599afec52e09": {
+    "sessionId": "ad229896-4cd5-46b1-b0ff-599afec52e09",
+    "conversationHistory": [
+      {
+        "role": "user",
+        "content": "__init__"
+      },
+      {
+        "role": "assistant",
+        "content": "Hey there! Welcome to your practice analysis demo.\n\nTo get started, what's the name of your practice exactly as it appears on Google Maps?"
+      },
+      {
+        "role": "user",
+        "content": "Zn"
+      },
+      {
+        "role": "assistant",
+        "content": "Got it — and what city is your practice located in?"
+      }
+    ],
+    "status": "active",
+    "scanStatus": "idle",
+    "researchStatus": "idle",
+    "researchData": null,
+    "scanResults": null,
+    "currentStep": "onboarding-2",
+    "name": null,
+    "phone": null,
+    "practiceName": "Zn",
+    "city": null,
+    "contactId": null,
+    "createdAt": 1776812538738
   }
 }
