@@ -6083,6 +6083,414 @@
       {
         "role": "assistant",
         "content": "Hey there! Welcome to Powered Up AI — I'm going to walk you through a quick analysis of your practice and show you exactly where revenue might be slipping through the cracks.\n\nTo get started, what's the name of your practice as it appears on Google Maps?"
+      },
+      {
+        "role": "user",
+        "content": "GY audiology"
+      },
+      {
+        "role": "assistant",
+        "content": "Great — and what city is your practice located in?"
+      },
+      {
+        "role": "user",
+        "content": "Kansas"
+      },
+      {
+        "role": "assistant",
+        "content": "Perfect — give me one sec while I pull up some data on that.\n\nWhile that's loading... what's your first name?"
+      }
+    ],
+    "status": "active",
+    "scanStatus": "complete",
+    "researchStatus": "complete",
+    "researchData": {
+      "name": "Neuro audiology at The University of Kansas Health System",
+      "rating": 4.5,
+      "reviews": 8,
+      "photos": 10,
+      "websiteListed": true,
+      "hoursSet": true,
+      "address": "2000 Olathe Boulevard Miller Suite 4001, Kansas City, KS 66160, USA",
+      "lat": 39.0548626,
+      "lng": -94.6089988,
+      "placeId": "ChIJf1Sjdy7uwIcRG6IiWI04BoA",
+      "competitors": [
+        {
+          "name": "Associated Audiologists",
+          "reviews": 876,
+          "rating": 4.9,
+          "placeId": "ChIJ4TNCeW3qwIcRWYztUcfyKZI"
+        },
+        {
+          "name": "University Health Truman Medical Center",
+          "reviews": 322,
+          "rating": 3.1,
+          "placeId": "ChIJidv_PG3wwIcRNL7Q-UXN8Co"
+        },
+        {
+          "name": "Associated Audiologists",
+          "reviews": 309,
+          "rating": 4.9,
+          "placeId": "ChIJhdtbXozswIcRtGg69uNXJBk"
+        },
+        {
+          "name": "Associated Audiologists",
+          "reviews": 260,
+          "rating": 4.9,
+          "placeId": "ChIJ9ymgyEtfwIcR9Vblqr3HWRQ"
+        },
+        {
+          "name": "Focus Hearing",
+          "reviews": 249,
+          "rating": 4.9,
+          "placeId": "ChIJC-HPRdTqwIcRnjBQoyFblKc"
+        }
+      ],
+      "competitorSummary": "GY audiology is ranked 6th out of 6 practices by review count",
+      "prospectRank": 6,
+      "populationOver65": 165000,
+      "estimatedHearingLoss": 54450,
+      "messagingEnabled": false,
+      "profileScore": "okay"
+    },
+    "scanResults": {
+      "gridResults": [
+        {
+          "lat": 38.9823626,
+          "lng": -94.70236130413005,
+          "rank": 2,
+          "topBusinesses": [
+            {
+              "name": "Associated Audiologists",
+              "rank": 1,
+              "rating": 4.9
+            },
+            {
+              "name": "American Hearing + Audiology",
+              "rank": 2,
+              "rating": 4.9
+            },
+            {
+              "name": "Kristine Campion, Au.D.",
+              "rank": 3,
+              "rating": null
+            }
+          ]
+        },
+        {
+          "lat": 38.9823626,
+          "lng": -94.65568005206502,
+          "rank": null,
+          "topBusinesses": [
+            {
+              "name": "Associated Audiologists",
+              "rank": 1,
+              "rating": 4.9
+            },
+            {
+              "name": "Stacey M. Baldwin, AUD",
+              "rank": 2,
+              "rating": null
+            }
+          ]
+        },
+        {
+          "lat": 38.9823626,
+          "lng": -94.6089988,
+          "rank": 3,
+          "topBusinesses": [
+            {
+              "name": "Associated Audiologists",
+              "rank": 1,
+              "rating": 4.9
+            },
+            {
+              "name": "Stacey M. Baldwin, AUD",
+              "rank": 2,
+              "rating": null
+            },
+            {
+              "name": "Home Town Hearing & Audiology",
+              "rank": 3,
+              "rating": null
+            }
+          ]
+        },
+        {
+          "lat": 38.9823626,
+          "lng": -94.56231754793497,
+          "rank": null,
+          "topBusinesses": []
+        },
+        {
+          "lat": 38.9823626,
+          "lng": -94.51563629586994,
+          "rank": null,
+          "topBusinesses": []
+        },
+        {
+          "lat": 39.0186126,
+          "lng": -94.70236130413005,
+          "rank": 1,
+          "topBusinesses": [
+            {
+              "name": "Ascentist Audiology & Vestibular Clinic",
+              "rank": 1,
+              "rating": 3
+            },
+            {
+              "name": "Lorann Brown, AuD, CCC-A",
+              "rank": 2,
+              "rating": null
+            },
+            {
+              "name": "Julie Teefey, AuD, CCC-A",
+              "rank": 3,
+              "rating": null
+            }
+          ]
+        },
+        {
+          "lat": 39.0186126,
+          "lng": -94.65568005206502,
+          "rank": null,
+          "topBusinesses": [
+            {
+              "name": "Injoy Hearing",
+              "rank": 1,
+              "rating": 4.8
+            }
+          ]
+        },
+        {
+          "lat": 39.0186126,
+          "lng": -94.6089988,
+          "rank": null,
+          "topBusinesses": [
+            {
+              "name": "Williams Travis G DO",
+              "rank": 1,
+              "rating": null
+            }
+          ]
+        },
+        {
+          "lat": 39.0186126,
+          "lng": -94.56231754793497,
+          "rank": null,
+          "topBusinesses": [
+            {
+              "name": "Rachel Murphy, AuD, CCC-A",
+              "rank": 1,
+              "rating": null
+            },
+            {
+              "name": "Abigail Dinkel, AuD, CCC-A",
+              "rank": 2,
+              "rating": null
+            },
+            {
+              "name": "Ascentist Healthcare",
+              "rank": 3,
+              "rating": 2
+            }
+          ]
+        },
+        {
+          "lat": 39.0186126,
+          "lng": -94.51563629586994,
+          "rank": null,
+          "topBusinesses": []
+        },
+        {
+          "lat": 39.0548626,
+          "lng": -94.70236130413005,
+          "rank": null,
+          "topBusinesses": []
+        },
+        {
+          "lat": 39.0548626,
+          "lng": -94.65568005206502,
+          "rank": null,
+          "topBusinesses": []
+        },
+        {
+          "lat": 39.0548626,
+          "lng": -94.6089988,
+          "rank": 2,
+          "topBusinesses": [
+            {
+              "name": "Saint Luke's Hospital Midwest Ear Institute",
+              "rank": 1,
+              "rating": 3.9
+            },
+            {
+              "name": "Neuro audiology at The University of Kansas Health System",
+              "rank": 2,
+              "rating": 4.5
+            },
+            {
+              "name": "Saint Luke's Ear, Nose, & Throat Specialists-Plaza",
+              "rank": 3,
+              "rating": 4
+            }
+          ]
+        },
+        {
+          "lat": 39.0548626,
+          "lng": -94.56231754793497,
+          "rank": null,
+          "topBusinesses": [
+            {
+              "name": "Costco hearing aid store",
+              "rank": 1,
+              "rating": 3.5
+            }
+          ]
+        },
+        {
+          "lat": 39.0548626,
+          "lng": -94.51563629586994,
+          "rank": null,
+          "topBusinesses": [
+            {
+              "name": "Stephan L. Mccall, PHD",
+              "rank": 1,
+              "rating": 4
+            },
+            {
+              "name": "Matthew William L",
+              "rank": 2,
+              "rating": null
+            },
+            {
+              "name": "Roxann F. Storms, PHD",
+              "rank": 3,
+              "rating": null
+            }
+          ]
+        },
+        {
+          "lat": 39.0911126,
+          "lng": -94.70236130413005,
+          "rank": null,
+          "topBusinesses": []
+        },
+        {
+          "lat": 39.0911126,
+          "lng": -94.65568005206502,
+          "rank": null,
+          "topBusinesses": []
+        },
+        {
+          "lat": 39.0911126,
+          "lng": -94.6089988,
+          "rank": null,
+          "topBusinesses": [
+            {
+              "name": "Hearing Aid Project",
+              "rank": 1,
+              "rating": 3.7
+            }
+          ]
+        },
+        {
+          "lat": 39.0911126,
+          "lng": -94.56231754793497,
+          "rank": 2,
+          "topBusinesses": [
+            {
+              "name": "University Health Truman Medical Center",
+              "rank": 1,
+              "rating": 3.1
+            },
+            {
+              "name": "University Health Audiology Clinic",
+              "rank": 2,
+              "rating": null
+            },
+            {
+              "name": "Bailey Pepperdine",
+              "rank": 3,
+              "rating": null
+            }
+          ]
+        },
+        {
+          "lat": 39.0911126,
+          "lng": -94.51563629586994,
+          "rank": null,
+          "topBusinesses": []
+        },
+        {
+          "lat": 39.1273626,
+          "lng": -94.70236130413005,
+          "rank": null,
+          "topBusinesses": []
+        },
+        {
+          "lat": 39.1273626,
+          "lng": -94.65568005206502,
+          "rank": null,
+          "topBusinesses": []
+        },
+        {
+          "lat": 39.1273626,
+          "lng": -94.6089988,
+          "rank": null,
+          "topBusinesses": []
+        },
+        {
+          "lat": 39.1273626,
+          "lng": -94.56231754793497,
+          "rank": null,
+          "topBusinesses": [
+            {
+              "name": "Sleep Apnea Solutions",
+              "rank": 1,
+              "rating": 5
+            }
+          ]
+        },
+        {
+          "lat": 39.1273626,
+          "lng": -94.51563629586994,
+          "rank": null,
+          "topBusinesses": []
+        }
+      ],
+      "visibleTop3": 5,
+      "visibleTop10": 5,
+      "invisible": 20,
+      "totalPoints": 25,
+      "percentInvisible": 80,
+      "topCompetitor": {
+        "name": "Associated Audiologists",
+        "visibleIn": 3
+      },
+      "averageRankWhereVisible": 2,
+      "scanUrl": "http://localhost:3000/scan/4c77b77a-d8d9-4cb3-89f2-9a7e3962d1e0"
+    },
+    "currentStep": "onboarding-3",
+    "name": null,
+    "phone": null,
+    "practiceName": "GY audiology",
+    "city": "Kansas",
+    "contactId": null,
+    "createdAt": 1776808156033,
+    "confirmedPlaceId": "ChIJf1Sjdy7uwIcRG6IiWI04BoA"
+  },
+  "b34cdabf-cbf3-46a2-a983-387e2a9b5905": {
+    "sessionId": "b34cdabf-cbf3-46a2-a983-387e2a9b5905",
+    "conversationHistory": [
+      {
+        "role": "user",
+        "content": "__init__"
+      },
+      {
+        "role": "assistant",
+        "content": "Hey there! Welcome to your practice analysis demo.\n\nLet's start simple — what's the name of your practice, exactly as it appears on Google Maps?"
       }
     ],
     "status": "active",
@@ -6096,6 +6504,22 @@
     "practiceName": null,
     "city": null,
     "contactId": null,
-    "createdAt": 1776808156033
+    "createdAt": 1776809934769
+  },
+  "49ca29be-7a2c-472a-8c3a-07e4a42b1ecf": {
+    "sessionId": "49ca29be-7a2c-472a-8c3a-07e4a42b1ecf",
+    "conversationHistory": [],
+    "status": "active",
+    "scanStatus": "idle",
+    "researchStatus": "idle",
+    "researchData": null,
+    "scanResults": null,
+    "currentStep": "onboarding-1",
+    "name": null,
+    "phone": null,
+    "practiceName": null,
+    "city": null,
+    "contactId": null,
+    "createdAt": 1776809941007
   }
 }

@@ -189,6 +189,11 @@ html,body{height:100%;overflow:hidden;background:#1a1a1a;font-family:system-ui,-
   let tickerIdx = 0;
   let researchPolling = null;
   let scanPolling = null;
+  let scanDataReady = false;
+
+  function isStep6OrLater(step) {
+    return ['step-6', 'booking', 'complete'].includes(step);
+  }
 
   // ── Init ───────────────────────────────────────────────────────────────────
   async function init() {
@@ -287,6 +292,8 @@ html,body{height:100%;overflow:hidden;background:#1a1a1a;font-family:system-ui,-
               if (evt.currentStep) {
                 currentStep = evt.currentStep;
                 updateProgress(currentStep);
+                // If we just arrived at step-6 and the scan was already done, show the map now
+                if (isStep6OrLater(currentStep) && scanDataReady) appendScanMap();
               }
               if (evt.scanReady) {
                 handleScanReady();
@@ -779,17 +786,22 @@ html,body{height:100%;overflow:hidden;background:#1a1a1a;font-family:system-ui,-
         if (d.status === 'complete') {
           clearInterval(scanPolling);
           scanPolling = null;
-          handleScanReady();
+          scanDataReady = true;
+          document.getElementById('step-label').firstChild.textContent = 'Scan complete — results ready';
+          document.getElementById('progress-bar').classList.add('pulse');
+          // Only reveal the map when the conversation has reached Step 6
+          if (isStep6OrLater(currentStep)) appendScanMap();
         }
       } catch {}
     }, 5000);
   }
 
   function handleScanReady() {
-    const label = document.getElementById('step-label');
-    label.firstChild.textContent = 'Scan complete — results ready';
+    scanDataReady = true;
+    document.getElementById('step-label').firstChild.textContent = 'Scan complete — results ready';
     document.getElementById('progress-bar').classList.add('pulse');
-    appendScanMap();
+    // Only reveal the map at Step 6 or beyond
+    if (isStep6OrLater(currentStep)) appendScanMap();
   }
 
   // ── Session API ──────────────────────────────────────────────────────────────
