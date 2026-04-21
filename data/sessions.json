@@ -194,6 +194,14 @@
       {
         "role": "assistant",
         "content": "Hey there! Welcome to your practice analysis demo.\n\nLet's start simple — what's the name of your practice, exactly as it appears on Google Maps?"
+      },
+      {
+        "role": "user",
+        "content": "GHR Hearing"
+      },
+      {
+        "role": "assistant",
+        "content": "Got it — and what city is your practice located in?"
       }
     ],
     "status": "active",
@@ -201,10 +209,10 @@
     "researchStatus": "idle",
     "researchData": null,
     "scanResults": null,
-    "currentStep": "onboarding-1",
+    "currentStep": "onboarding-2",
     "name": null,
     "phone": null,
-    "practiceName": null,
+    "practiceName": "GHR Hearing",
     "city": null,
     "contactId": null,
     "createdAt": 1776799399110
