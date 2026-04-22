@@ -149,6 +149,10 @@ app.post('/webhooks/ghl/inbound', async (req, res) => {
 
   console.log(`[Webhook] Queuing job for contact ${contactId}: "${messageBody.slice(0, 60)}"`);
 
+  // Cancel follow-up jobs immediately at intake — before enqueue — so a queued
+  // AI handler or a due scheduler job cannot fire after this inbound arrives.
+  followups.cancelContactJobs(contactId);
+
   enqueueJob({ contactId, conversationId, messageBody, firstName, city, phone });
 });
 

@@ -276,11 +276,18 @@ async function sendFollowUp(job, contact, position) {
     return;
   }
 
+  let sendResult;
   try {
-    await ghl.sendMessage(job.contactId, hookText);
+    sendResult = await ghl.sendMessage(job.contactId, hookText);
   } catch (err) {
     console.error(`[Followups] GHL send error for ${job.contactId}:`, err.message);
     updateJob(job.id, { status: 'skipped', error: `GHL: ${err.message}` });
+    return;
+  }
+
+  if (!sendResult) {
+    console.error(`[Followups] GHL returned null for ${job.contactId} — marking skipped`);
+    updateJob(job.id, { status: 'skipped', error: 'GHL returned null (send failed)' });
     return;
   }
 
