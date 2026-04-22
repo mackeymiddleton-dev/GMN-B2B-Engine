@@ -635,6 +635,18 @@ app.get('/api/followups/:contactId', requireAdmin, (req, res) => {
   res.json(jobs.sort((a, b) => b.createdAt - a.createdAt));
 });
 
+// ─── Admin: Dashboard ─────────────────────────────────────────────────────────
+
+app.get('/admin', (req, res) => {
+  if (!process.env.ADMIN_KEY) return res.status(503).send('ADMIN_KEY not configured');
+  const key = req.query.key || req.headers['x-admin-key'];
+  if (!key || key !== process.env.ADMIN_KEY) {
+    return res.status(401).send('Unauthorized. Add ?key=YOUR_ADMIN_KEY to the URL.');
+  }
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(buildAdminDashboardPage(key));
+});
+
 // ─── Admin: Prompt Editor ─────────────────────────────────────────────────────
 
 app.get('/admin/prompts', (req, res) => {
@@ -751,6 +763,244 @@ if(stats.totalPoints>0){
     \${stats.averageRankWhereVisible?\`<div class="stat-row"><span class="dot" style="background:#888"></span><span class="stat-label">Avg rank where visible</span><span class="stat-value">#\${stats.averageRankWhereVisible}</span></div>\`:''}
   </div>\`;
 }
+</script>
+</body>
+</html>`;
+}
+
+// ─── Admin Dashboard Page ─────────────────────────────────────────────────────
+
+function buildAdminDashboardPage(adminKey) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin Dashboard — Powered Up AI</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:#0f0f0f;color:#e8e8e8;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh;padding:40px 16px 80px}
+.logo{font-size:13px;font-weight:600;letter-spacing:.08em;color:#555;text-transform:uppercase;text-align:center;margin-bottom:40px}
+h1{font-size:22px;font-weight:700;color:#fff;text-align:center;margin-bottom:8px}
+.subtitle{font-size:14px;color:#666;text-align:center;margin-bottom:8px;line-height:1.5}
+.refresh-info{font-size:12px;color:#444;text-align:center;margin-bottom:40px}
+.panel{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:16px;padding:28px;width:100%;max-width:960px;margin:0 auto 24px}
+.panel-title{font-size:15px;font-weight:700;color:#fff;margin-bottom:18px;display:flex;align-items:center;gap:10px}
+.panel-title a{font-size:13px;font-weight:500;color:#748ffc;text-decoration:none;margin-left:auto}
+.panel-title a:hover{text-decoration:underline}
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:16px;margin-bottom:0}
+.stat-box{background:#111;border:1px solid #2a2a2a;border-radius:10px;padding:16px 14px;text-align:center}
+.stat-box .val{font-size:28px;font-weight:700;color:#fff;line-height:1}
+.stat-box .lbl{font-size:11px;color:#666;margin-top:6px;text-transform:uppercase;letter-spacing:.06em}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;color:#555;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.06em;padding:0 10px 10px;border-bottom:1px solid #2a2a2a}
+td{padding:10px;border-bottom:1px solid #1e1e1e;color:#ccc;vertical-align:top}
+tr:last-child td{border-bottom:none}
+.badge{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px;white-space:nowrap}
+.badge-booked{background:#14532d33;color:#4ade80;border:1px solid #14532d66}
+.badge-active{background:#1e3a5f33;color:#60a5fa;border:1px solid #1e3a5f66}
+.badge-pending{background:#3b2f1133;color:#fbbf24;border:1px solid #78450f66}
+.badge-sent{background:#14532d33;color:#4ade80;border:1px solid #14532d66}
+.badge-skipped{background:#2a1a1a33;color:#888;border:1px solid #3a2a2a66}
+.badge-cancelled{background:#2a1a1a33;color:#666;border:1px solid #3a2a2a44}
+.stage-row td{font-size:12.5px}
+.empty{color:#444;font-size:13px;padding:20px 0;text-align:center}
+.reply-rate{font-size:13px;color:#748ffc;font-weight:600}
+.loading{color:#444;text-align:center;padding:20px;font-size:13px}
+</style>
+</head>
+<body>
+<div class="logo">Powered Up AI</div>
+<div style="text-align:center;max-width:960px;margin:0 auto 40px">
+  <h1>Admin Dashboard</h1>
+  <p class="subtitle">Live overview of contacts, brain stats, and follow-up jobs.</p>
+  <p class="refresh-info">Auto-refreshes every 30 seconds &bull; <span id="countdown">30</span>s until next refresh</p>
+</div>
+
+<div class="panel" id="panel-brain">
+  <div class="panel-title">Brain Stats <a href="/admin/prompts?key=${adminKey}">Prompt Editor &rarr;</a></div>
+  <div id="brain-content"><div class="loading">Loading&hellip;</div></div>
+</div>
+
+<div class="panel" id="panel-contacts">
+  <div class="panel-title">Contacts</div>
+  <div id="contacts-content"><div class="loading">Loading&hellip;</div></div>
+</div>
+
+<div class="panel" id="panel-followups">
+  <div class="panel-title">Follow-Up Queue</div>
+  <div id="followups-content"><div class="loading">Loading&hellip;</div></div>
+</div>
+
+<script>
+const ADMIN_KEY = ${JSON.stringify(adminKey)};
+
+function fmtTime(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts);
+  return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+}
+
+function fmtRelative(ts) {
+  if (!ts) return '—';
+  const diff = Date.now() - ts;
+  const mins = Math.round(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return mins + 'm ago';
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return hrs + 'h ago';
+  return Math.round(hrs / 24) + 'd ago';
+}
+
+function escHtml(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+async function loadBrain() {
+  const el = document.getElementById('brain-content');
+  try {
+    const res = await fetch('/api/brain/stats', { headers: { 'x-admin-key': ADMIN_KEY } });
+    if (!res.ok) throw new Error(res.statusText);
+    const data = await res.json();
+    const t = data.totals || {};
+    const replyRate = t.outbound > 0 ? Math.round((t.inbound / t.outbound) * 100) : 0;
+    const bookedRate = t.contacts > 0 ? Math.round((t.booked / t.contacts) * 100) : 0;
+
+    let stageRows = '';
+    const stages = Object.entries(data.byStage || {});
+    if (stages.length > 0) {
+      stageRows = \`<table style="margin-top:20px">
+        <thead><tr>
+          <th>Stage</th><th>Sent</th><th>Replied</th><th>Reply Rate</th><th>Booked</th>
+        </tr></thead>
+        <tbody>\${stages.map(([stage, s]) => {
+          const rate = s.sent > 0 ? Math.round((s.replied / s.sent) * 100) : 0;
+          return \`<tr class="stage-row">
+            <td>\${escHtml(stage)}</td>
+            <td>\${s.sent}</td>
+            <td>\${s.replied}</td>
+            <td><span class="reply-rate">\${rate}%</span></td>
+            <td>\${s.booked}</td>
+          </tr>\`;
+        }).join('')}</tbody>
+      </table>\`;
+    }
+
+    el.innerHTML = \`
+      <div class="stat-grid">
+        <div class="stat-box"><div class="val">\${t.outbound || 0}</div><div class="lbl">Messages Sent</div></div>
+        <div class="stat-box"><div class="val">\${t.inbound || 0}</div><div class="lbl">Replies In</div></div>
+        <div class="stat-box"><div class="val">\${replyRate}%</div><div class="lbl">Reply Rate</div></div>
+        <div class="stat-box"><div class="val">\${t.contacts || 0}</div><div class="lbl">Contacts</div></div>
+        <div class="stat-box"><div class="val">\${t.booked || 0}</div><div class="lbl">Booked</div></div>
+        <div class="stat-box"><div class="val">\${bookedRate}%</div><div class="lbl">Book Rate</div></div>
+      </div>
+      \${stageRows}
+    \`;
+  } catch (err) {
+    el.innerHTML = '<div class="empty">Failed to load: ' + escHtml(err.message) + '</div>';
+  }
+}
+
+async function loadContacts() {
+  const el = document.getElementById('contacts-content');
+  try {
+    const res = await fetch('/api/contacts', { headers: { 'x-admin-key': ADMIN_KEY } });
+    if (!res.ok) throw new Error(res.statusText);
+    const list = await res.json();
+    if (list.length === 0) {
+      el.innerHTML = '<div class="empty">No contacts yet.</div>';
+      return;
+    }
+    el.innerHTML = \`<table>
+      <thead><tr>
+        <th>Name</th><th>Practice</th><th>Step</th><th>Status</th><th>Messages</th><th>Last Activity</th>
+      </tr></thead>
+      <tbody>\${list.map(c => {
+        const status = c.booked
+          ? '<span class="badge badge-booked">Booked</span>'
+          : '<span class="badge badge-active">Active</span>';
+        return \`<tr>
+          <td>\${escHtml(c.firstName || '—')}</td>
+          <td>\${escHtml(c.practiceName || c.city || '—')}</td>
+          <td>\${c.currentStep != null ? c.currentStep : '—'}</td>
+          <td>\${status}</td>
+          <td>\${c.exchangeCount || 0}</td>
+          <td title="\${fmtTime(c.lastMessageAt)}">\${fmtRelative(c.lastMessageAt)}</td>
+        </tr>\`;
+      }).join('')}</tbody>
+    </table>\`;
+  } catch (err) {
+    el.innerHTML = '<div class="empty">Failed to load: ' + escHtml(err.message) + '</div>';
+  }
+}
+
+async function loadFollowups() {
+  const el = document.getElementById('followups-content');
+  try {
+    const [jobsRes, contactsRes] = await Promise.all([
+      fetch('/api/followups', { headers: { 'x-admin-key': ADMIN_KEY } }),
+      fetch('/api/contacts', { headers: { 'x-admin-key': ADMIN_KEY } })
+    ]);
+    if (!jobsRes.ok) throw new Error(jobsRes.statusText);
+    const jobs = await jobsRes.json();
+    const contactMap = {};
+    if (contactsRes.ok) {
+      const contacts = await contactsRes.json();
+      contacts.forEach(c => { contactMap[c.contactId] = c; });
+    }
+    if (jobs.length === 0) {
+      el.innerHTML = '<div class="empty">No follow-up jobs found.</div>';
+      return;
+    }
+
+    function contactName(contactId) {
+      const c = contactMap[contactId];
+      if (!c) return escHtml(contactId);
+      const name = [c.firstName, c.practiceName || c.city].filter(Boolean).join(' — ');
+      return \`<span title="\${escHtml(contactId)}">\${escHtml(name || contactId)}</span>\`;
+    }
+
+    function statusBadge(s) {
+      const map = { pending:'badge-pending', sent:'badge-sent', skipped:'badge-skipped', cancelled:'badge-cancelled' };
+      return \`<span class="badge \${map[s] || 'badge-skipped'}">\${escHtml(s)}</span>\`;
+    }
+
+    el.innerHTML = \`<table>
+      <thead><tr>
+        <th>Contact</th><th>Type</th><th>Position</th><th>Status</th><th>Scheduled</th><th>Created</th>
+      </tr></thead>
+      <tbody>\${jobs.map(j => \`<tr>
+        <td>\${contactName(j.contactId)}</td>
+        <td>\${escHtml(j.type || '—')}</td>
+        <td>\${j.position != null ? j.position : '—'}</td>
+        <td>\${statusBadge(j.status)}</td>
+        <td title="\${fmtTime(j.sendAt)}">\${fmtRelative(j.sendAt)}</td>
+        <td title="\${fmtTime(j.createdAt)}">\${fmtRelative(j.createdAt)}</td>
+      </tr>\`).join('')}</tbody>
+    </table>\`;
+  } catch (err) {
+    el.innerHTML = '<div class="empty">Failed to load: ' + escHtml(err.message) + '</div>';
+  }
+}
+
+function loadAll() {
+  loadBrain();
+  loadContacts();
+  loadFollowups();
+}
+
+loadAll();
+
+let secondsLeft = 30;
+setInterval(() => {
+  secondsLeft--;
+  document.getElementById('countdown').textContent = secondsLeft;
+  if (secondsLeft <= 0) {
+    secondsLeft = 30;
+    loadAll();
+  }
+}, 1000);
 </script>
 </body>
 </html>`;
