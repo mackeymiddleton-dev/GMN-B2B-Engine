@@ -6,13 +6,14 @@
  * on the next AI call — no restart required.
  *
  * Names:
- *   conversationPrompt   — 9-step GHL discovery script
+ *   conversationPrompt   — Discovery script (steps 1-9)
  *   systemPrompt         — GMB one-shot message generator
- *   followup.hook1       — Hook 1 re-engagement template
- *   followup.hook2       — Hook 2 second-touch template
- *   followup.hook3       — Hook 3 third-touch template
- *   followup.nurture     — Monthly nurture template
+ *   followup.hook        — Shared re-engagement hook (positions 2 & 3, full history)
+ *   followup.nurture     — Monthly nurture message (full history)
  *   followup.system      — System role for follow-up hook generator
+ *   brain.analysisPrompt — Learning brain 72hr analysis prompt
+ *
+ * NOTE: Hook 1 (5-min silence) is a static "Hi [firstName]" — no prompt needed.
  */
 
 const fs = require('fs');
@@ -21,13 +22,18 @@ const config = require('./config');
 
 const FILE = path.join(__dirname, 'data', 'prompts.json');
 
+// ─── Prompt Version ───────────────────────────────────────────────────────────
+// Bump this when the conversationPrompt default changes significantly so the
+// stored version is automatically replaced on next server start.
+const CONVERSATION_PROMPT_VERSION = 2;
+
 // ─── Default Prompt Definitions ───────────────────────────────────────────────
 
 const PROMPT_META = [
   {
     name: 'conversationPrompt',
-    label: 'Conversation Flow (9-Step Discovery Script)',
-    description: 'The full 9-step discovery script the AI runs via SMS — including RULES, ACKNOWLEDGMENTS, REFRAMES, OBJECTIONS, and the booking step. Every inbound GHL message runs through this prompt.'
+    label: 'Conversation Flow (Discovery Script)',
+    description: 'The full discovery script the AI runs via SMS — including RULES, ACKNOWLEDGMENTS, REFRAMES, OBJECTIONS, and the booking step. Every inbound GHL message runs through this prompt.'
   },
   {
     name: 'systemPrompt',
@@ -35,24 +41,14 @@ const PROMPT_META = [
     description: 'Used by the /api/generate endpoint to craft a single outreach message based on Google My Business data (reviews, competitors, visibility scan).'
   },
   {
-    name: 'followup.hook1',
-    label: 'Follow-Up Hook 1 — Re-Engagement (5-min silence)',
-    description: 'Template sent when a prospect goes quiet mid-conversation (5 minutes of silence). The FIRST SENTENCE is the SMS text preview — it must create curiosity on its own.'
-  },
-  {
-    name: 'followup.hook2',
-    label: 'Follow-Up Hook 2 — Second Touch',
-    description: 'Second follow-up message sent 1–3 days after Hook 1 if there\'s still no reply. Different angle from Hook 1.'
-  },
-  {
-    name: 'followup.hook3',
-    label: 'Follow-Up Hook 3 — Third Touch',
-    description: 'Third and final hook sent after no reply to Hooks 1 and 2. Lighter tone, acknowledges silence without awkwardness.'
+    name: 'followup.hook',
+    label: 'Follow-Up Re-Engagement Hook (Hooks 2 & 3)',
+    description: 'AI-generated re-engagement message for Hooks 2 and 3. Receives the full conversation history so it never repeats itself. First sentence is the SMS preview — must create curiosity. Hook 1 (5-min silence) is a static "Hi [firstName]" — no prompt needed.'
   },
   {
     name: 'followup.nurture',
     label: 'Monthly Nurture Message',
-    description: 'Monthly check-in message for prospects who never booked a call. Very light touch — one fresh data point, no pressure.'
+    description: 'Monthly check-in message for prospects who never booked a call. Receives full conversation history. Very light touch — one fresh data point, no pressure.'
   },
   {
     name: 'followup.system',
@@ -71,9 +67,7 @@ const PROMPT_META = [
 const DEFAULTS = {
   conversationPrompt: config.conversationPrompt,
   systemPrompt: config.systemPrompt,
-  'followup.hook1': config.followUpPrompts?.hook1 || '',
-  'followup.hook2': config.followUpPrompts?.hook2 || '',
-  'followup.hook3': config.followUpPrompts?.hook3 || '',
+  'followup.hook': config.followUpPrompts?.hook || '',
   'followup.nurture': config.followUpPrompts?.nurture || '',
   'followup.system': 'You are a sales text-message copywriter. Return ONLY the message text — no quotes, no preamble, no explanation.',
   'brain.analysisPrompt': `You are an AI sales coach analyzing performance data from an audiology practice outreach campaign.
@@ -173,15 +167,42 @@ function listAll() {
 }
 
 /**
- * Seed prompts.json with all defaults if the file does not yet exist.
- * Safe to call multiple times — no-ops if the file is already present.
- * Called from server.js at startup.
+ * Seed prompts.json on startup.
+ * - Creates the file if missing.
+ * - Removes stale hook1/hook2/hook3 keys (replaced by followup.hook).
+ * - If conversationPrompt version in storage is older than CONVERSATION_PROMPT_VERSION,
+ *   clears the stored override so the new default takes effect immediately.
  */
 function seed() {
   ensureDir();
+
+  const stored = load();
+  let changed = false;
+
+  // Remove legacy hook prompt keys no longer in use
+  const legacyKeys = ['followup.hook1', 'followup.hook2', 'followup.hook3'];
+  for (const key of legacyKeys) {
+    if (key in stored) {
+      delete stored[key];
+      changed = true;
+      console.log(`[Prompts] Removed legacy prompt key: ${key}`);
+    }
+  }
+
+  // Force-update conversationPrompt if stored version is outdated
+  const storedVersion = stored['_conversationPromptVersion'] || 0;
+  if (storedVersion < CONVERSATION_PROMPT_VERSION) {
+    delete stored['conversationPrompt'];
+    stored['_conversationPromptVersion'] = CONVERSATION_PROMPT_VERSION;
+    changed = true;
+    console.log(`[Prompts] conversationPrompt updated to v${CONVERSATION_PROMPT_VERSION} — stored override cleared`);
+  }
+
   if (!fs.existsSync(FILE)) {
-    fs.writeFileSync(FILE, JSON.stringify({}, null, 2));
+    fs.writeFileSync(FILE, JSON.stringify({ _conversationPromptVersion: CONVERSATION_PROMPT_VERSION }, null, 2));
     console.log('[Prompts] data/prompts.json created (no overrides; all defaults active)');
+  } else if (changed) {
+    save(stored);
   }
 }
 

@@ -192,31 +192,53 @@ function interpolate(template, vars) {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? '');
 }
 
+// ─── Conversation History Formatter ──────────────────────────────────────────
+
+/**
+ * Format a contact's exchanges array into a readable plain-text transcript
+ * suitable for injection into follow-up prompts.
+ */
+function formatConversationHistory(exchanges) {
+  if (!exchanges || exchanges.length === 0) return '(no conversation history available)';
+  return exchanges
+    .filter(e => e.body && e.body.trim())
+    .map(e => {
+      const role = e.direction === 'inbound' ? 'PROSPECT' : 'AI';
+      return `${role}: ${e.body.trim()}`;
+    })
+    .join('\n');
+}
+
 // ─── Hook Message Generation ──────────────────────────────────────────────────
 
+/**
+ * Generate a hook or nurture message using AI.
+ * Position 1 (Hook 1) is handled separately as a static send — this is only
+ * called for positions 2+ where full conversation context is passed.
+ */
 async function generateHookMessage(contact, position, jobType) {
-  let promptName = 'followup.hook1';
-  if (position === 2) promptName = 'followup.hook2';
-  else if (position === 3) promptName = 'followup.hook3';
-  else if (jobType === 'nurture' || position >= 4) promptName = 'followup.nurture';
+  const isNurture = jobType === 'nurture' || position >= 4;
+  const promptName = isNurture ? 'followup.nurture' : 'followup.hook';
 
   const rawTemplate = prompts.get(promptName);
   const stage = brain.classifyStage(contact.currentStep ?? null);
+
+  const conversationHistory = formatConversationHistory(contact.exchanges || []);
+
+  const patterns = brain.getWinningPatterns(stage);
+  const winningPatterns = (patterns && patterns.length > 0)
+    ? `Opening styles that have generated replies: ${patterns.slice(0, 2).map(p => `"${(p.example || '').slice(0, 80)}"`).join(' | ')}. Lean toward similar energy.`
+    : '';
 
   const userPrompt = interpolate(rawTemplate, {
     firstName: contact.firstName || 'there',
     step: contact.currentStep ?? 1,
     stage,
-    lastOutbound: contact.lastOutbound || '',
-    lastReply: contact.lastReply || 'none'
+    conversationHistory,
+    winningPatterns
   });
 
-  let systemPrompt = prompts.get('followup.system');
-  const patterns = brain.getWinningPatterns(stage);
-  if (patterns && patterns.length > 0) {
-    const examples = patterns.slice(0, 2).map(p => `"${(p.example || '').slice(0, 80)}"`).join(' | ');
-    systemPrompt += ` These opening styles have generated replies: ${examples}. Lean toward similar energy.`;
-  }
+  const systemPrompt = prompts.get('followup.system');
 
   const response = await getAI().messages.create({
     model: process.env.ANTHROPIC_MODEL || 'claude-opus-4-5',
@@ -248,23 +270,56 @@ function scheduleNext(contactId, sentPosition, currentStep, lastBody, tz) {
   }
 }
 
-// ─── Send + Record ────────────────────────────────────────────────────────────
+// ─── Hook 1 Static Send ───────────────────────────────────────────────────────
+
+/**
+ * Send a plain static "Hi [firstName]" — no AI call, no template.
+ * This fires 5 minutes after silence and is intentionally minimal.
+ */
+async function sendHook1Static(job, contact) {
+  const firstName = contact.firstName || '';
+  const hookText = firstName ? `Hi ${firstName}` : 'Hi there';
+
+  let sendResult;
+  try {
+    sendResult = await ghl.sendMessage(job.contactId, hookText);
+  } catch (err) {
+    console.error(`[Followups] GHL send error (Hook 1) for ${job.contactId}:`, err.message);
+    updateJob(job.id, { status: 'skipped', error: `GHL: ${err.message}` });
+    return;
+  }
+
+  if (!sendResult) {
+    console.error(`[Followups] GHL returned null (Hook 1) for ${job.contactId} — marking skipped`);
+    updateJob(job.id, { status: 'skipped', error: 'GHL returned null (send failed)' });
+    return;
+  }
+
+  conversations.addExchange(job.contactId, {
+    direction: 'outbound',
+    body: hookText,
+    step: contact.currentStep ?? null,
+    conversationId: null,
+    type: 'followup-hook-pos1'
+  });
+
+  brain.recordOutbound(job.contactId, hookText, contact.currentStep ?? null);
+
+  const tz = job.context?.timezone || getContactTimezone(job.contactId);
+  updateJob(job.id, { status: 'sent', sentAt: Date.now() });
+  scheduleNext(job.contactId, 1, contact.currentStep ?? null, hookText, tz);
+
+  console.log(`[Followups] Hook 1 (static) sent to ${job.contactId}: "${hookText}"`);
+}
+
+// ─── AI-Generated Send (Hooks 2/3 + Nurture) ─────────────────────────────────
 
 async function sendFollowUp(job, contact, position) {
-  const exchanges = contact.exchanges || [];
-  const lastInbound = [...exchanges].reverse().find(e => e.direction === 'inbound');
-  const lastOutbound = [...exchanges].reverse().find(e => e.direction === 'outbound');
-
-  const contactCtx = {
-    ...contact,
-    type: job.type,
-    lastOutbound: lastOutbound?.body || job.context?.lastOutboundBody || '',
-    lastReply: lastInbound?.body || ''
-  };
+  const freshContact = conversations.get(job.contactId) || contact;
 
   let hookText = '';
   try {
-    hookText = await generateHookMessage(contactCtx, position, job.type);
+    hookText = await generateHookMessage(freshContact, position, job.type);
   } catch (err) {
     console.error(`[Followups] Claude error for ${job.contactId}:`, err.message);
     updateJob(job.id, { status: 'skipped', error: err.message });
@@ -291,21 +346,19 @@ async function sendFollowUp(job, contact, position) {
     return;
   }
 
-  // Persist follow-up send to local conversation history (fallback context)
   conversations.addExchange(job.contactId, {
     direction: 'outbound',
     body: hookText,
-    step: contact.currentStep ?? null,
+    step: freshContact.currentStep ?? null,
     conversationId: null,
     type: `followup-${job.type}-pos${position}`
   });
 
-  // Record in learning brain
-  brain.recordOutbound(job.contactId, hookText, contact.currentStep ?? null);
+  brain.recordOutbound(job.contactId, hookText, freshContact.currentStep ?? null);
 
   const tz = job.context?.timezone || getContactTimezone(job.contactId);
   updateJob(job.id, { status: 'sent', sentAt: Date.now() });
-  scheduleNext(job.contactId, position, contact.currentStep ?? null, hookText, tz);
+  scheduleNext(job.contactId, position, freshContact.currentStep ?? null, hookText, tz);
 
   console.log(`[Followups] Hook pos=${position} sent to ${job.contactId}: "${hookText.slice(0, 80)}"`);
 }
@@ -335,8 +388,8 @@ async function processSilenceCheck(job) {
     return;
   }
 
-  console.log(`[Followups] Silence check for ${job.contactId}: silent — sending Hook 1`);
-  await sendFollowUp(job, contact, 1);
+  console.log(`[Followups] Silence check for ${job.contactId}: silent — sending Hook 1 (static)`);
+  await sendHook1Static(job, contact);
 }
 
 async function processHookOrNurture(job) {
