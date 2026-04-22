@@ -1,0 +1,50 @@
+[
+  {
+    "id": "1776834664781-328ovl",
+    "contactId": "test123",
+    "direction": "inbound",
+    "body": "Hello there",
+    "stage": "unknown",
+    "step": 0,
+    "timestamp": 1776834664781,
+    "repliedWithin48h": null,
+    "repliedAt": null,
+    "booked": false
+  },
+  {
+    "id": "1776834667559-byh7df",
+    "contactId": "test123",
+    "direction": "outbound",
+    "body": "Hey John — looks like you saw our message about recovering lost revenue from your patient database. Quick question before I dive in: of the patients you've recommended hearing aids to in the last couple years, what percentage actually went through with it?",
+    "stage": "first-touch",
+    "step": 1,
+    "timestamp": 1776834667559,
+    "repliedWithin48h": null,
+    "repliedAt": null,
+    "booked": false
+  },
+  {
+    "id": "1776834699436-sdjheb",
+    "contactId": "abc123",
+    "direction": "inbound",
+    "body": "25% I would say",
+    "stage": "unknown",
+    "step": 0,
+    "timestamp": 1776834699436,
+    "repliedWithin48h": null,
+    "repliedAt": null,
+    "booked": false
+  },
+  {
+    "id": "1776834703101-3jbzfy",
+    "contactId": "abc123",
+    "direction": "outbound",
+    "body": "That's actually pretty common — which means 75% of patients who need hearing aids walked out without them. That's a lot of revenue sitting in your database. So you've got patients who need hearing aids but didn't buy. Now here's what most practices don't think about — their insurance benefits reset every 3 years. Right now, patients in your database have $2,000 to $5,000 in coverage that's about to expire. They'll lose it completely if they don't use it. And nobody's telling them. Do you have anything in place to reach those patients before that money disappears?",
+    "stage": "gap-exposure",
+    "step": 2,
+    "timestamp": 1776834703101,
+    "repliedWithin48h": null,
+    "repliedAt": null,
+    "booked": false
+  }
+]

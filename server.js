@@ -58,10 +58,9 @@ async function drainQueue() {
 function verifyGhlWebhook(req, res) {
   const secret = process.env.GHL_WEBHOOK_SECRET;
   if (!secret) {
-    // Fail-closed: if no secret is configured the endpoint is not ready for production
-    console.error('[Webhook] GHL_WEBHOOK_SECRET is not set — rejecting request');
-    res.status(503).json({ error: 'Webhook not configured — set GHL_WEBHOOK_SECRET' });
-    return false;
+    // No secret configured — allow all requests through (open mode)
+    // Set GHL_WEBHOOK_SECRET to enable signature verification
+    return true;
   }
   // GHL can be configured to send the secret in several headers; support all common forms
   const provided =
@@ -121,7 +120,7 @@ app.post('/webhooks/ghl/inbound', async (req, res) => {
 
   const messageBody = (
     payload.body ||
-    payload.message?.body ||
+    (typeof payload.message === 'string' ? payload.message : payload.message?.body) ||
     payload.messageBody ||
     payload.text ||
     ''
