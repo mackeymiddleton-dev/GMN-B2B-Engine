@@ -24,14 +24,67 @@ app.use(express.static('public'));
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+// ─── Simple In-Memory Job Queue ───────────────────────────────────────────────
+// Ensures one webhook job processes at a time; prevents race conditions on
+// concurrent webhooks for the same contact.
+
+const jobQueue = [];
+let processing = false;
+
+function enqueueJob(job) {
+  jobQueue.push(job);
+  if (!processing) drainQueue();
+}
+
+async function drainQueue() {
+  if (processing || jobQueue.length === 0) return;
+  processing = true;
+  while (jobQueue.length > 0) {
+    const job = jobQueue.shift();
+    try {
+      await handleInbound(job);
+    } catch (err) {
+      console.error('[Queue] Job error:', err.message);
+    }
+  }
+  processing = false;
+}
+
+// ─── GHL Webhook Auth ─────────────────────────────────────────────────────────
+
+function verifyGhlWebhook(req) {
+  const secret = process.env.GHL_WEBHOOK_SECRET;
+  if (!secret) {
+    // No secret configured — log a warning but allow through for initial setup
+    console.warn('[Webhook] GHL_WEBHOOK_SECRET not set — running without verification');
+    return true;
+  }
+  // GHL can be configured to send the secret in several headers; support all common forms
+  const provided =
+    req.headers['x-ghl-signature'] ||
+    req.headers['x-api-key'] ||
+    req.headers['authorization']?.replace(/^Bearer\s+/i, '') ||
+    req.query.token ||
+    '';
+  if (provided === secret) return true;
+  console.warn('[Webhook] Auth failed — received key does not match GHL_WEBHOOK_SECRET');
+  return false;
+}
+
 // ─── GHL Inbound Webhook ──────────────────────────────────────────────────────
 
 app.post('/webhooks/ghl/inbound', async (req, res) => {
+  // Verify the request is from GHL
+  if (!verifyGhlWebhook(req)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  // Acknowledge immediately — GHL expects a fast 200
   res.json({ received: true });
 
   const payload = req.body;
 
-  // GHL sends different shapes depending on webhook version/type — handle both
+  // Handle multiple GHL webhook payload shapes
   const contactId =
     payload.contactId ||
     payload.contact_id ||
@@ -42,12 +95,13 @@ app.post('/webhooks/ghl/inbound', async (req, res) => {
     payload.conversation_id ||
     payload.conversation?.id;
 
-  const messageBody =
+  const messageBody = (
     payload.body ||
     payload.message?.body ||
     payload.messageBody ||
     payload.text ||
-    '';
+    ''
+  ).trim();
 
   const firstName =
     payload.contact?.firstName ||
@@ -65,52 +119,83 @@ app.post('/webhooks/ghl/inbound', async (req, res) => {
     payload.phone ||
     '';
 
-  if (!contactId || !messageBody.trim()) {
-    console.log('[Webhook] Missing contactId or body — skipping:', JSON.stringify(payload).slice(0, 200));
+  if (!contactId || !messageBody) {
+    console.log('[Webhook] Skipping — missing contactId or body');
     return;
   }
 
-  console.log(`[Webhook] Inbound from contact ${contactId}: "${messageBody.slice(0, 80)}"`);
+  console.log(`[Webhook] Queuing job for contact ${contactId}: "${messageBody.slice(0, 60)}"`);
 
-  handleInbound({ contactId, conversationId, messageBody: messageBody.trim(), firstName, city, phone })
-    .catch(err => console.error('[Webhook] handleInbound error:', err.message));
+  enqueueJob({ contactId, conversationId, messageBody, firstName, city, phone });
 });
 
-async function handleInbound({ contactId, conversationId, messageBody, firstName, city, phone }) {
-  // Load or create contact conversation record
-  const contact = conversations.ensureContact(contactId, { firstName, city, phone });
+// ─── Webhook Handler ──────────────────────────────────────────────────────────
 
-  // Sync any new contact info we received
+async function handleInbound({ contactId, conversationId, messageBody, firstName, city, phone }) {
+  // ── 1. Fetch authoritative contact info from GHL ─────────────────────────────
+  const ghlContact = await ghl.fetchContact(contactId);
+
+  const resolvedFirstName = ghlContact?.firstName || firstName || '';
+  const resolvedCity = ghlContact?.city || ghlContact?.address?.city || city || '';
+  const resolvedPhone = ghlContact?.phone || phone || '';
+
+  // ── 2. Load / create local contact record ────────────────────────────────────
+  conversations.ensureContact(contactId, {
+    firstName: resolvedFirstName,
+    city: resolvedCity,
+    phone: resolvedPhone
+  });
+
+  // Sync any updated contact info
   const infoUpdates = {};
-  if (firstName && !contact.firstName) infoUpdates.firstName = firstName;
-  if (city && !contact.city) infoUpdates.city = city;
-  if (phone && !contact.phone) infoUpdates.phone = phone;
+  if (resolvedFirstName) infoUpdates.firstName = resolvedFirstName;
+  if (resolvedCity) infoUpdates.city = resolvedCity;
+  if (resolvedPhone) infoUpdates.phone = resolvedPhone;
   if (Object.keys(infoUpdates).length) conversations.update(contactId, infoUpdates);
 
-  // Record the inbound message
-  conversations.addExchange(contactId, { direction: 'inbound', body: messageBody, conversationId });
+  // ── 3. Record this inbound message ───────────────────────────────────────────
+  conversations.addExchange(contactId, {
+    direction: 'inbound',
+    body: messageBody,
+    step: conversations.get(contactId)?.currentStep || 0,
+    conversationId
+  });
 
-  // Reload fresh state
+  // Reload fresh state after recording
   const fresh = conversations.get(contactId);
 
-  // Don't reply to already-booked contacts
   if (fresh?.booked) {
-    console.log(`[Webhook] Contact ${contactId} already booked — no reply sent`);
+    console.log(`[Webhook] Contact ${contactId} already booked — skipping`);
     return;
   }
 
-  // Build Claude message history from local exchanges
-  const messages = buildClaudeMessages(fresh?.exchanges || []);
+  // ── 4. Build message history from GHL + local ─────────────────────────────────
+  // Fetch full conversation from GHL (authoritative source)
+  let messages = [];
+  if (conversationId) {
+    const ghlMessages = await ghl.fetchMessages(conversationId);
+    messages = buildMessagesFromGhl(ghlMessages);
+  }
+
+  // If GHL messages are empty or unavailable, fall back to local exchanges
   if (messages.length === 0) {
-    console.log(`[Webhook] No message history to send to Claude for ${contactId}`);
+    messages = buildMessagesFromLocal(fresh?.exchanges || []);
+  }
+
+  if (messages.length === 0) {
+    console.log(`[Webhook] No message history for ${contactId}`);
     return;
   }
 
-  // Build system prompt, inject live data if we have it
+  // ── 5. Build system prompt with live data ─────────────────────────────────────
   let systemContent = config.conversationPrompt;
 
-  if (fresh?.firstName || firstName) {
-    systemContent += `\n\nPROSPECT FIRST NAME: ${fresh?.firstName || firstName}`;
+  if (resolvedFirstName || fresh?.firstName) {
+    systemContent += `\n\nPROSPECT FIRST NAME: ${resolvedFirstName || fresh?.firstName}`;
+  }
+
+  if (fresh?.currentStep !== undefined) {
+    systemContent += `\n\nCURRENT STEP: ${fresh.currentStep} (continue from here)`;
   }
 
   if (fresh?.researchData) {
@@ -136,98 +221,132 @@ async function handleInbound({ contactId, conversationId, messageBody, firstName
     }, null, 2)}`;
   }
 
-  // Call Claude
-  try {
-    const model = process.env.ANTHROPIC_MODEL || 'claude-opus-4-5';
-    const response = await anthropic.messages.create({
-      model,
-      max_tokens: 512,
-      system: systemContent,
-      messages
+  // ── 6. Call Claude ────────────────────────────────────────────────────────────
+  const model = process.env.ANTHROPIC_MODEL || 'claude-opus-4-5';
+  const response = await anthropic.messages.create({
+    model,
+    max_tokens: 512,
+    system: systemContent,
+    messages
+  });
+
+  let reply = response.content[0]?.text?.trim() || '';
+
+  // ── 7. Extract hidden markers ─────────────────────────────────────────────────
+
+  // [STEP:N] — track current step
+  const stepMatch = reply.match(/\[STEP:(\d+)\]/i);
+  const detectedStep = stepMatch ? parseInt(stepMatch[1], 10) : null;
+  reply = reply.replace(/\[STEP:\d+\]\s*/gi, '').trim();
+
+  // [PRACTICE_DETECTED:name] — trigger GMB research
+  const practiceMatch = reply.match(/\[PRACTICE_DETECTED:([^\]]+)\]/i);
+  if (practiceMatch) {
+    const practiceName = practiceMatch[1].trim();
+    reply = reply.replace(/\[PRACTICE_DETECTED:[^\]]+\]\s*/i, '').trim();
+    const contactCity = resolvedCity || fresh?.city || '';
+    conversations.update(contactId, { practiceName });
+    console.log(`[Webhook] Practice detected: "${practiceName}" in "${contactCity}"`);
+
+    if (practiceName && contactCity) {
+      const sessionObj = { sessionId: contactId };
+      sessions.set(contactId, {
+        sessionId: contactId,
+        practiceName,
+        city: contactCity,
+        researchStatus: 'idle',
+        scanStatus: 'idle',
+        researchData: null,
+        scanResults: null,
+        createdAt: Date.now()
+      });
+      runResearch(sessionObj, practiceName, contactCity, null).then(() => {
+        const s = sessions.get(contactId);
+        if (s?.researchData) {
+          conversations.update(contactId, { researchData: s.researchData });
+          console.log(`[Webhook] Research stored for ${contactId}`);
+        }
+      }).catch(() => {});
+      startScan(sessionObj, practiceName, contactCity, config.scanKeyword).then(() => {
+        const s = sessions.get(contactId);
+        if (s?.scanResults) {
+          conversations.update(contactId, { scanResults: s.scanResults });
+          console.log(`[Webhook] Scan stored for ${contactId}`);
+        }
+      }).catch(() => {});
+    }
+  }
+
+  // [BOOKED] — mark contact as booked
+  if (reply.includes('[BOOKED]')) {
+    reply = reply.replace(/\[BOOKED\]\s*/gi, '').trim();
+    conversations.update(contactId, { booked: true });
+    console.log(`[Webhook] Contact ${contactId} booked!`);
+  }
+
+  // Update step
+  if (detectedStep !== null) {
+    conversations.update(contactId, { currentStep: detectedStep });
+  }
+
+  // ── 8. Send reply via GHL and persist ─────────────────────────────────────────
+  if (reply) {
+    await ghl.sendMessage(contactId, reply);
+    conversations.addExchange(contactId, {
+      direction: 'outbound',
+      body: reply,
+      step: detectedStep,
+      conversationId
     });
-
-    let reply = response.content[0]?.text?.trim() || '';
-
-    // ── Detect [PRACTICE_DETECTED:name] ───────────────────────────────────────
-    const practiceMatch = reply.match(/\[PRACTICE_DETECTED:([^\]]+)\]/i);
-    if (practiceMatch) {
-      const practiceName = practiceMatch[1].trim();
-      reply = reply.replace(/\[PRACTICE_DETECTED:[^\]]+\]\n?/i, '').trim();
-
-      const contactCity = fresh?.city || city || '';
-      conversations.update(contactId, { practiceName });
-      console.log(`[Webhook] Practice detected for ${contactId}: "${practiceName}" in "${contactCity}"`);
-
-      // Trigger GMB research + scan keyed to this contactId
-      if (practiceName && contactCity) {
-        const sessionObj = { sessionId: contactId };
-        sessions.set(contactId, {
-          sessionId: contactId,
-          practiceName,
-          city: contactCity,
-          researchStatus: 'idle',
-          scanStatus: 'idle',
-          researchData: null,
-          scanResults: null,
-          createdAt: Date.now()
-        });
-
-        runResearch(sessionObj, practiceName, contactCity, null).then(() => {
-          const s = sessions.get(contactId);
-          if (s?.researchData) {
-            conversations.update(contactId, { researchData: s.researchData });
-            console.log(`[Webhook] Research stored for ${contactId}`);
-          }
-        }).catch(() => {});
-
-        startScan(sessionObj, practiceName, contactCity, config.scanKeyword).then(() => {
-          const s = sessions.get(contactId);
-          if (s?.scanResults) {
-            conversations.update(contactId, { scanResults: s.scanResults });
-            console.log(`[Webhook] Scan stored for ${contactId}`);
-          }
-        }).catch(() => {});
-      }
-    }
-
-    // ── Detect [BOOKED] ───────────────────────────────────────────────────────
-    if (reply.includes('[BOOKED]')) {
-      reply = reply.replace(/\[BOOKED\]\n?/i, '').trim();
-      conversations.update(contactId, { booked: true });
-      console.log(`[Webhook] Contact ${contactId} booked!`);
-    }
-
-    // ── Send reply via GHL ────────────────────────────────────────────────────
-    if (reply) {
-      await ghl.sendMessage(contactId, reply);
-      conversations.addExchange(contactId, { direction: 'outbound', body: reply, conversationId });
-      console.log(`[Webhook] Reply sent to ${contactId}: "${reply.slice(0, 80)}"`);
-    }
-
-  } catch (err) {
-    console.error(`[Webhook] Claude error for ${contactId}:`, err.message);
+    console.log(`[Webhook] Sent to ${contactId} (step ${detectedStep}): "${reply.slice(0, 80)}"`);
   }
 }
 
-function buildClaudeMessages(exchanges) {
-  const raw = exchanges.map(ex => ({
+// ─── Message History Builders ─────────────────────────────────────────────────
+
+function buildMessagesFromGhl(ghlMessages) {
+  if (!ghlMessages || ghlMessages.length === 0) return [];
+
+  const mapped = ghlMessages
+    .filter(m => m.body || m.message)
+    .map(m => {
+      // GHL direction: 1 = outbound (AI), 2 = inbound (prospect)
+      // Some versions use 'direction' field as 'inbound'/'outbound'
+      const isInbound =
+        m.direction === 'inbound' ||
+        m.direction === 2 ||
+        m.messageType === 'inbound' ||
+        m.type === 2;
+      return {
+        role: isInbound ? 'user' : 'assistant',
+        content: (m.body || m.message || '').trim()
+      };
+    })
+    .filter(m => m.content.length > 0);
+
+  return mergeAndNormalise(mapped);
+}
+
+function buildMessagesFromLocal(exchanges) {
+  const mapped = exchanges.map(ex => ({
     role: ex.direction === 'inbound' ? 'user' : 'assistant',
     content: ex.body
   }));
+  return mergeAndNormalise(mapped);
+}
 
+function mergeAndNormalise(messages) {
   // Merge consecutive same-role messages
   const merged = [];
-  for (const m of raw) {
+  for (const m of messages) {
     if (merged.length > 0 && merged[merged.length - 1].role === m.role) {
       merged[merged.length - 1].content += ' ' + m.content;
     } else {
       merged.push({ role: m.role, content: m.content });
     }
   }
-
-  // Claude requires messages to start with user
+  // Claude requires messages to start with 'user'
   while (merged.length > 0 && merged[0].role !== 'user') merged.shift();
-
   return merged;
 }
 
@@ -244,7 +363,7 @@ app.post('/api/places/search', async (req, res) => {
     const resp = await fetch(url);
     const data = await resp.json();
     const results = (data.results || []).slice(0, 5).map(p => {
-      const photoRef = p.photos && p.photos[0] ? p.photos[0].photo_reference : null;
+      const photoRef = p.photos?.[0]?.photo_reference || null;
       const photoUrl = photoRef
         ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=600&photoreference=${photoRef}&key=${apiKey}`
         : null;
@@ -374,7 +493,6 @@ app.get('/scan/:sessionId', (req, res) => {
   const lat = session?.researchData?.lat || 37.7749;
   const lng = session?.researchData?.lng || -122.4194;
   const scanResults = session?.scanResults;
-
   res.send(buildScanPage(req.params.sessionId, practiceName, city, lat, lng, scanResults));
 });
 
@@ -397,7 +515,7 @@ app.get('/api/scan/data/:sessionId', (req, res) => {
   });
 });
 
-// ─── Contact Conversation Status (for monitoring) ─────────────────────────────
+// ─── Admin: Contact Monitoring ────────────────────────────────────────────────
 
 function requireAdmin(req, res, next) {
   const key = req.query.key || req.headers['x-admin-key'];
@@ -415,6 +533,7 @@ app.get('/api/contacts', requireAdmin, (req, res) => {
       city: c.city,
       practiceName: c.practiceName,
       booked: c.booked,
+      currentStep: c.currentStep,
       exchangeCount: (c.exchanges || []).length,
       lastMessageAt: c.lastMessageAt,
       createdAt: c.createdAt

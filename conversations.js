@@ -49,10 +49,12 @@ function ensureContact(contactId, defaults = {}) {
       contactId,
       firstName: null,
       city: null,
+      phone: null,
       practiceName: null,
       researchData: null,
       scanResults: null,
       booked: false,
+      currentStep: 0,
       lastMessageAt: null,
       createdAt: Date.now(),
       exchanges: [],
@@ -67,7 +69,13 @@ function addExchange(contactId, exchange) {
   const all = load();
   if (!all[contactId]) return;
   all[contactId].exchanges = all[contactId].exchanges || [];
-  all[contactId].exchanges.push({ ...exchange, timestamp: Date.now() });
+  all[contactId].exchanges.push({
+    direction: exchange.direction,
+    body: exchange.body,
+    step: exchange.step || null,
+    conversationId: exchange.conversationId || null,
+    timestamp: Date.now()
+  });
   all[contactId].lastMessageAt = Date.now();
   save(all);
 }
