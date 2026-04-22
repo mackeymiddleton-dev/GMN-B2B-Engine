@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
 const Anthropic = require('@anthropic-ai/sdk');
+const spend = require('./spend');
 const config = require('./config');
 const prompts = require('./prompts');
 const conversations = require('./conversations');
@@ -72,6 +73,14 @@ function _dbBulkUpdateStatus(ids, status) {
 }
 
 _initJobsFromDb();
+
+// When a contact hits the $1 spend cap, immediately cancel all their pending jobs
+spend.onLimitHit(contactId => {
+  const cancelled = cancelContactJobs(contactId) + cancelEmailJobs(contactId);
+  if (cancelled > 0) {
+    console.warn(`[Spend] Cancelled ${cancelled} pending jobs for ${contactId}`);
+  }
+});
 
 // Lazy-init Anthropic client
 let _ai = null;
@@ -489,12 +498,20 @@ async function generateHookMessage(contact, position, jobType, contactId) {
 
   const systemPrompt = prompts.get('followup.system');
 
+  if (spend.isAtLimit(contactId)) {
+    console.warn(`[Followups] Skipping SMS generation for ${contactId} — spend limit reached`);
+    return '';
+  }
+
+  const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';
   const response = await getAI().messages.create({
-    model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6',
+    model,
     max_tokens: 200,
     system: systemPrompt,
     messages: [{ role: 'user', content: userPrompt }]
   });
+
+  spend.track(contactId, model, response.usage);
 
   return response.content[0]?.text?.trim() || '';
 }
@@ -695,13 +712,20 @@ async function generateEmailMessage(contact, position, jobType, contactId) {
 
   const systemPrompt = prompts.get('email.system');
 
+  if (spend.isAtLimit(contactId)) {
+    console.warn(`[Followups] Skipping email generation for ${contactId} — spend limit reached`);
+    return null;
+  }
+
+  const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';
   try {
     const response = await getAI().messages.create({
-      model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6',
+      model,
       max_tokens: 400,
       system: systemPrompt,
       messages: [{ role: 'user', content: userPrompt }]
     });
+    spend.track(contactId, model, response.usage);
 
     const raw = response.content[0]?.text?.trim() || '';
     const parsed = JSON.parse(raw);
@@ -807,13 +831,25 @@ async function processEmailJob(job) {
     return;
   }
 
-  // 5. Generate email content
+  // 5. Spend limit check
+  if (spend.isAtLimit(job.contactId)) {
+    updateJob(job.id, { status: 'cancelled', error: 'API spend limit reached' });
+    cancelContactJobs(job.contactId);
+    cancelEmailJobs(job.contactId);
+    return;
+  }
+
+  // 6. Generate email content
   let emailContent;
   try {
     emailContent = await generateEmailMessage(contact, job.position, job.type, job.contactId);
   } catch (err) {
     console.error(`[Followups] Email generation failed for ${job.contactId}:`, err.message);
     updateJob(job.id, { status: 'skipped', error: err.message });
+    return;
+  }
+  if (!emailContent) {
+    updateJob(job.id, { status: 'cancelled', error: 'API spend limit reached' });
     return;
   }
 
@@ -920,6 +956,13 @@ async function processHookOrNurture(job) {
   }
   if (contact.booked) {
     updateJob(job.id, { status: 'cancelled', error: 'Already booked' });
+    return;
+  }
+
+  if (spend.isAtLimit(job.contactId)) {
+    updateJob(job.id, { status: 'cancelled', error: 'API spend limit reached' });
+    cancelContactJobs(job.contactId);
+    cancelEmailJobs(job.contactId);
     return;
   }
 

@@ -57,7 +57,7 @@ function isRealMessage(m) {
 
 // ─── Claude-based analysis ────────────────────────────────────────────────────
 
-async function claudeAnalyseConversation(ghlMessages) {
+async function claudeAnalyseConversation(ghlMessages, contactId) {
   const real = ghlMessages.filter(isRealMessage);
   const sorted = [...real].sort((a, b) => {
     return parseDate(a.dateAdded || a.createdAt) - parseDate(b.dateAdded || b.createdAt);
@@ -99,11 +99,17 @@ Rules:
 - Respond with ONLY the raw JSON object, no markdown, no explanation outside the JSON.`;
 
   try {
+    const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';
     const res = await getAI().messages.create({
-      model:      process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6',
+      model,
       max_tokens: 300,
       messages:   [{ role: 'user', content: prompt }]
     });
+
+    if (contactId) {
+      const spend = require('./spend');
+      spend.track(contactId, model, res.usage);
+    }
 
     const raw  = (res.content[0]?.text || '').trim();
     const json = JSON.parse(raw);
@@ -264,7 +270,7 @@ async function runEnrollment({ tag = '', dryRun = true, delayMs = 2000, signal }
     let analysis;
     // Dry-run: use fast heuristics only — Claude analysis only runs on real enrollment.
     if (!dryRun && hasAnyInbound) {
-      const claudeResult = await claudeAnalyseConversation(ghlMessages);
+      const claudeResult = await claudeAnalyseConversation(ghlMessages, contactId);
       if (claudeResult) {
         analysis = {
           ...heuristicAnalysis(ghlMessages),

@@ -21,6 +21,7 @@ const brain = require('./brain');
 const followups = require('./followups');
 const prompts = require('./prompts');
 const { runEnrollment } = require('./enrollment');
+const spend = require('./spend');
 
 const app = express();
 app.use(express.json());
@@ -617,6 +618,12 @@ async function handleInbound({ contactId, conversationId, messageBody, firstName
     return;
   }
 
+  // ── 3.5. API spend limit check ───────────────────────────────────────────────
+  if (spend.isAtLimit(contactId)) {
+    console.warn(`[Webhook] Contact ${contactId} has hit API spend limit — not generating reply`);
+    return;
+  }
+
   // ── 4. Build message history from GHL + local ─────────────────────────────────
   // Resolve conversationId if not present in webhook payload (e.g. some GHL event types)
   let resolvedConvId = conversationId;
@@ -703,6 +710,8 @@ async function handleInbound({ contactId, conversationId, messageBody, firstName
     system: systemContent,
     messages
   });
+
+  spend.track(contactId, model, response.usage);
 
   let reply = response.content[0]?.text?.trim() || '';
 
@@ -1156,15 +1165,17 @@ app.get('/api/contacts', requireAdmin, (req, res) => {
   const list = Object.values(all)
     .sort((a, b) => (b.lastMessageAt || 0) - (a.lastMessageAt || 0))
     .map(c => ({
-      contactId: c.contactId,
-      firstName: c.firstName,
-      city: c.city,
-      practiceName: c.practiceName,
-      booked: c.booked,
-      currentStep: c.currentStep,
-      exchangeCount: (c.exchanges || []).length,
-      lastMessageAt: c.lastMessageAt,
-      createdAt: c.createdAt
+      contactId:            c.contactId,
+      firstName:            c.firstName,
+      city:                 c.city,
+      practiceName:         c.practiceName,
+      booked:               c.booked,
+      currentStep:          c.currentStep,
+      exchangeCount:        (c.exchanges || []).length,
+      lastMessageAt:        c.lastMessageAt,
+      createdAt:            c.createdAt,
+      totalApiSpend:        c.totalApiSpend        || 0,
+      apiSpendLimitReached: c.apiSpendLimitReached || false
     }));
   res.json(list);
 });
@@ -1173,6 +1184,12 @@ app.get('/api/contacts/:contactId', requireAdmin, (req, res) => {
   const c = conversations.get(req.params.contactId);
   if (!c) return res.status(404).json({ error: 'Not found' });
   res.json(c);
+});
+
+app.post('/api/contacts/:contactId/reset-spend', requireAdmin, (req, res) => {
+  const ok = spend.resetLimit(req.params.contactId);
+  if (!ok) return res.status(404).json({ error: 'Contact not found' });
+  res.json({ ok: true });
 });
 
 // ─── Admin: Learning Brain ────────────────────────────────────────────────────
@@ -1595,6 +1612,13 @@ tr:hover td{background:#18181c}
   <div id="followups-content"><div class="loading">Loading&hellip;</div></div>
 </div>
 
+<!-- ── Spend Monitor ── -->
+<div class="panel">
+  <div class="panel-header"><div class="panel-title">API Spend Monitor</div></div>
+  <p class="panel-desc">Claude API cost per contact. Each contact is capped at $1.00 — once hit, AI responses stop and all pending jobs are cancelled. Use the override button to resume a high-value prospect.</p>
+  <div id="spend-content"><div class="loading">Loading&hellip;</div></div>
+</div>
+
 <!-- ── Performance Stats ── -->
 <div class="panel">
   <div class="panel-header"><div class="panel-title">Performance</div></div>
@@ -1855,7 +1879,86 @@ async function loadBrain() {
   }
 }
 
-function loadAll() { loadFollowups(); loadBrain(); }
+async function loadSpend() {
+  const el = document.getElementById('spend-content');
+  try {
+    const res = await fetch('/api/contacts', { headers: { 'x-admin-key': ADMIN_KEY } });
+    if (!res.ok) throw new Error(res.statusText);
+    const contacts = await res.json();
+    const withSpend = contacts
+      .filter(c => (c.totalApiSpend || 0) > 0 || c.apiSpendLimitReached)
+      .sort((a, b) => (b.totalApiSpend || 0) - (a.totalApiSpend || 0));
+
+    if (withSpend.length === 0) {
+      el.innerHTML = '<div class="empty">No API spend recorded yet. Spend accumulates as AI generates messages for enrolled contacts.</div>';
+      return;
+    }
+
+    const totalSpend = contacts.reduce((s, c) => s + (c.totalApiSpend || 0), 0);
+    const atLimit = contacts.filter(c => c.apiSpendLimitReached).length;
+
+    el.innerHTML = \`
+      <div class="queue-summary" style="margin-bottom:16px">
+        <div class="qs-item"><strong>\${withSpend.length}</strong> contacts with recorded spend</div>
+        <div class="qs-item"><strong>$\${totalSpend.toFixed(4)}</strong> total across all contacts</div>
+        \${atLimit > 0 ? '<div class="qs-item" style="color:#ef4444"><strong>'+atLimit+'</strong> at $1 limit</div>' : ''}
+        <div class="qs-item" style="color:#444">Cap: $1.00 per contact</div>
+      </div>
+      <table>
+        <thead><tr>
+          <th>Contact</th>
+          <th>Total Spend</th>
+          <th>Status</th>
+          <th>Action</th>
+        </tr></thead>
+        <tbody>\${withSpend.map(c => {
+          const pct = Math.min(100, ((c.totalApiSpend || 0) / 1.00) * 100);
+          const barColor = c.apiSpendLimitReached ? '#ef4444' : pct > 75 ? '#f59e0b' : '#818cf8';
+          const name = escHtml(c.firstName || '—');
+          const loc = escHtml(c.practiceName || c.city || '');
+          const limitBadge = c.apiSpendLimitReached
+            ? '<span class="badge" style="background:#2a0a0a;color:#ef4444;border:1px solid #7f1d1d">Limit Hit</span>'
+            : '<span class="badge b-active">Active</span>';
+          const resetBtn = c.apiSpendLimitReached
+            ? \`<button onclick="resetSpend('\${escHtml(c.contactId)}')" style="font-size:11px;font-weight:600;padding:4px 10px;border-radius:6px;border:1px solid #4f46e5;background:#1e1b4b;color:#818cf8;cursor:pointer">Override &rarr;</button>\`
+            : '—';
+          return \`<tr>
+            <td>
+              <div class="name-cell">\${name}</div>
+              \${loc ? '<div class="city-cell">'+loc+'</div>' : ''}
+            </td>
+            <td>
+              <div style="font-weight:600;color:#e2e2e2">$\${(c.totalApiSpend||0).toFixed(4)}</div>
+              <div style="margin-top:5px;height:4px;background:#1f1f1f;border-radius:2px;width:100px">
+                <div style="height:4px;background:\${barColor};border-radius:2px;width:\${pct.toFixed(1)}%"></div>
+              </div>
+              <div style="font-size:10px;color:#444;margin-top:2px">\${pct.toFixed(0)}% of $1 cap</div>
+            </td>
+            <td>\${limitBadge}</td>
+            <td>\${resetBtn}</td>
+          </tr>\`;
+        }).join('')}</tbody>
+      </table>
+    \`;
+  } catch (err) {
+    el.innerHTML = '<div class="empty">Failed to load: ' + escHtml(err.message) + '</div>';
+  }
+}
+
+async function resetSpend(contactId) {
+  if (!confirm('Resume AI for this contact? Their spend counter will stay as-is but the block will be removed.')) return;
+  try {
+    const res = await fetch('/api/contacts/' + encodeURIComponent(contactId) + '/reset-spend', {
+      method: 'POST', headers: { 'x-admin-key': ADMIN_KEY }
+    });
+    if (!res.ok) throw new Error(await res.text());
+    await loadSpend();
+  } catch (err) {
+    alert('Reset failed: ' + err.message);
+  }
+}
+
+function loadAll() { loadFollowups(); loadBrain(); loadSpend(); }
 loadAll();
 
 let secondsLeft = 30;
