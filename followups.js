@@ -91,12 +91,12 @@ function getAI() {
 
 // ─── Timing Constants ─────────────────────────────────────────────────────────
 
-const DEFAULT_TZ = 'America/New_York'; // EST fallback
-const SILENCE_CHECK_MS = 5 * 60 * 1000; // 5 minutes
-const MORNING_START = 7;  // 7am
-const MORNING_END = 8;    // 8am
-const EVENING_START = 16; // 4pm
-const EVENING_END = 21;   // 8pm inclusive (window: 4pm–8pm, check is h < EVENING_END)
+const DEFAULT_TZ       = 'America/New_York'; // EST fallback when city unknown
+const SILENCE_CHECK_MS = 5 * 60 * 1000;     // 5 minutes
+
+// SMS send window: 8:00pm – 8:30pm local time (Eastern when city unknown)
+const WINDOW_HOUR     = 20; // 8pm
+const WINDOW_MIN_END  = 30; // exclusive upper bound on minutes (0–29 = :00, 30 = :30 slot included below)
 
 // ─── Cadence Constants ────────────────────────────────────────────────────────
 
@@ -150,33 +150,39 @@ function getContactTimezone(contactId) {
 
 // ─── Window Helpers ───────────────────────────────────────────────────────────
 
-function tzHour(ts, tz) {
-  return parseInt(
-    new Intl.DateTimeFormat('en-US', { timeZone: tz || DEFAULT_TZ, hour: '2-digit', hour12: false })
-      .format(new Date(ts || Date.now())),
-    10
-  );
+function tzTime(ts, tz) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz || DEFAULT_TZ,
+    hour: '2-digit', minute: '2-digit', hour12: false
+  }).formatToParts(new Date(ts || Date.now()));
+  return {
+    hour:   parseInt(parts.find(p => p.type === 'hour').value,   10),
+    minute: parseInt(parts.find(p => p.type === 'minute').value, 10)
+  };
 }
 
+// Keep tzHour for any callers that still use it
+function tzHour(ts, tz) { return tzTime(ts, tz).hour; }
+
 function isInWindow(ts, tz) {
-  const h = tzHour(ts || Date.now(), tz || DEFAULT_TZ);
-  return (h >= MORNING_START && h < MORNING_END) || (h >= EVENING_START && h < EVENING_END);
+  const { hour, minute } = tzTime(ts || Date.now(), tz || DEFAULT_TZ);
+  // 8:00pm–8:30pm inclusive: slots at :00 and :30
+  return hour === WINDOW_HOUR && minute <= WINDOW_MIN_END;
 }
 
 /**
- * Find the next allowed send window, scanning forward in 1-hour increments.
- * Uses the contact's estimated timezone (with EST fallback).
+ * Find the next allowed send window, scanning forward in 30-minute increments.
+ * Window: 8:00pm–8:30pm in the contact's local timezone (Eastern fallback).
  */
 function nextWindowMs(fromMs, tz) {
   const timezone = tz || DEFAULT_TZ;
-  let t = Math.ceil((fromMs + 60_000) / 3_600_000) * 3_600_000;
+  const STEP = 30 * 60 * 1000; // 30 minutes
+  // Snap to next 30-minute boundary (skip at least 1 min ahead)
+  let t = Math.ceil((fromMs + 60_000) / STEP) * STEP;
   const limit = fromMs + 8 * 24 * 60 * 60 * 1000;
   while (t < limit) {
-    const h = tzHour(t, timezone);
-    if ((h >= MORNING_START && h < MORNING_END) || (h >= EVENING_START && h < EVENING_END)) {
-      return t;
-    }
-    t += 3_600_000;
+    if (isInWindow(t, timezone)) return t;
+    t += STEP;
   }
   return fromMs + 24 * 60 * 60 * 1000;
 }
