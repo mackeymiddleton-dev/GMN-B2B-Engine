@@ -24,17 +24,14 @@ const STAGE_MAP = {
   1: 'first-touch',
   2: 'gap-exposure',
   3: 'gap-exposure',
-  4: 'referral',
-  5: 'referral',
-  6: 'visibility',
-  7: 'close-prep',
-  8: 'booking',
-  9: 'booked'
+  4: 'data-reveal',
+  5: 'booking',
+  6: 'booked'
 };
 
 function classifyStage(step) {
   if (step === null || step === undefined) return 'unknown';
-  return STAGE_MAP[step] || (step > 9 ? 'booked' : 'unknown');
+  return STAGE_MAP[step] || (step > 6 ? 'booked' : 'unknown');
 }
 
 // ─── File Helpers ─────────────────────────────────────────────────────────────

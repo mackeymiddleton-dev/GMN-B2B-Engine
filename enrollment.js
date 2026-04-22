@@ -113,19 +113,17 @@ async function claudeAnalyseConversation(ghlMessages) {
 CONVERSATION TRANSCRIPT:
 ${transcript}
 
-Our 8-step SMS sales flow:
+Our 6-step SMS sales flow:
 - Step 1: Introduction / initial hook (who we are, curious about their practice)
 - Step 2: Benefits angle (insurance resets, percentage not captured)
 - Step 3: Dormant patients angle (patients not seen in 2+ years)
-- Step 4: Practice research reveal (mention specific gap we found)
-- Step 5: Objection handling / follow-up
-- Step 6: Social proof / case study
-- Step 7: Booking pitch (stack 2-4 revenue gaps, pitch 10-min Zoom)
-- Step 8: Final close / last attempt
+- Step 4: Practice research reveal + booking ask (data reveal, gap stack, pitch 10-min Zoom)
+- Step 5: Founder intro / scheduling (Sid pitch, time slot ask)
+- Step 6: Booked (confirmed Zoom)
 
 Analyze the conversation and return a JSON object with exactly these fields:
 {
-  "currentStep": <number 0-8, the step they were on when conversation stalled>,
+  "currentStep": <number 0-6, the step they were on when conversation stalled>,
   "enrollPosition": <number 2-5, which follow-up hook position to start them at>,
   "reasoning": "<one sentence explanation>"
 }

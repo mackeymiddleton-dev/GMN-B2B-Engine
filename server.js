@@ -36,31 +36,54 @@ const jobQueue = [];
 let processing = false;
 
 // ─── Step-3 Auto-Send Tracker ─────────────────────────────────────────────────
-// When PRACTICE_DETECTED fires, a pure bridge is sent and Step 3 is auto-sent
-// 10 seconds later so questions flow while the scan runs in the background. Timeouts are tracked
-// here so they can be cancelled if the prospect replies before the delay fires.
-const pendingStep3 = new Map(); // contactId → setTimeout handle
+// When PRACTICE_DETECTED fires, a bridge message is sent and Step 3 is queued.
+// Instead of a fixed delay, we poll until research completes (or 90 s timeout)
+// so the AI always has research data available when the prospect replies to Step 3.
+// After Step 3 is sent, a second watcher fires the scan-visibility follow-up
+// once the map scan completes — but only if the prospect hasn't replied yet.
+const pendingStep3   = new Map(); // contactId → setInterval handle (research poller)
+const pendingScanWatch = new Map(); // contactId → setInterval handle (scan watcher)
 
-const STEP3_DELAY_MS = 10 * 1000;
+const STEP3_POLL_MS    = 2 * 1000;
+const STEP3_TIMEOUT_MS = 90 * 1000;
+const SCAN_POLL_MS     = 2 * 1000;
+const SCAN_TIMEOUT_MS  = 90 * 1000;
+
 const STEP3_TEXT = 'Now think about this — you\'ve got patients you haven\'t seen in 2+ years. Their hearing has gotten worse. Their benefits have reset. They\'re not coming back on their own. What are you doing to bring them back in before they end up at the practice down the road?';
 
 function scheduleStep3AutoSend(contactId, resolvedConvId, skipReplyGuard = false) {
   clearPendingStep3(contactId);
-  const handle = setTimeout(async () => {
-    pendingStep3.delete(contactId);
-    const contact = conversations.get(contactId);
-    if (!contact || contact.booked) return;
+  const started = Date.now();
 
-    // Cancel if prospect already replied after the bridge — but skip this check
-    // when called from the confirmation flow (their last message WAS the confirmation)
+  const handle = setInterval(async () => {
+    const contact = conversations.get(contactId);
+    if (!contact || contact.booked) {
+      clearPendingStep3(contactId);
+      return;
+    }
+
+    const session = sessions.get(contactId);
+    const researchDone = session?.researchStatus === 'complete' || session?.researchStatus === 'failed';
+    const timedOut     = Date.now() - started > STEP3_TIMEOUT_MS;
+
+    if (!researchDone && !timedOut) return; // still waiting
+
+    clearPendingStep3(contactId);
+
+    // Cancel if prospect already replied after the bridge — skip when the
+    // confirmation YES was their last message (skipReplyGuard)
     if (!skipReplyGuard) {
-      const exch = contact.exchanges || [];
+      const exch    = contact.exchanges || [];
       const lastOut = [...exch].reverse().find(e => e.direction === 'outbound');
-      const lastIn = [...exch].reverse().find(e => e.direction === 'inbound');
+      const lastIn  = [...exch].reverse().find(e => e.direction === 'inbound');
       if (lastIn && lastOut && lastIn.timestamp > lastOut.timestamp) {
         console.log(`[Step3Auto] ${contactId} already replied — skipping auto-send`);
         return;
       }
+    }
+
+    if (timedOut && !researchDone) {
+      console.log(`[Step3Auto] Research timeout for ${contactId} — sending Step 3 without data`);
     }
 
     try {
@@ -74,20 +97,119 @@ function scheduleStep3AutoSend(contactId, resolvedConvId, skipReplyGuard = false
       brain.recordOutbound(contactId, STEP3_TEXT, 3);
       conversations.update(contactId, { currentStep: 3 });
       followups.scheduleSilenceCheck(contactId, 3, STEP3_TEXT);
-      console.log(`[Step3Auto] Step 3 question sent to ${contactId}`);
+      console.log(`[Step3Auto] Step 3 sent to ${contactId} (research ${researchDone ? 'complete' : 'timed out'})`);
+
+      // Watch for scan completion → send visibility follow-up
+      watchForScanAndSendVisibility(contactId, resolvedConvId);
     } catch (err) {
       console.error(`[Step3Auto] Failed to send Step 3 for ${contactId}:`, err.message);
     }
-  }, STEP3_DELAY_MS);
+  }, STEP3_POLL_MS);
+
   pendingStep3.set(contactId, handle);
-  console.log(`[Step3Auto] Scheduled Step 3 for ${contactId} in ${STEP3_DELAY_MS / 1000}s`);
+  console.log(`[Step3Auto] Watching for research completion for ${contactId}`);
 }
 
 function clearPendingStep3(contactId) {
   if (pendingStep3.has(contactId)) {
-    clearTimeout(pendingStep3.get(contactId));
+    clearInterval(pendingStep3.get(contactId));
     pendingStep3.delete(contactId);
     console.log(`[Step3Auto] Cancelled pending Step 3 for ${contactId}`);
+  }
+}
+
+// ─── Scan-Visibility Follow-Up ─────────────────────────────────────────────────
+// After Step 3 is sent, poll until the map scan finishes. When it does, send a
+// separate (non-numbered) message surfacing visibility gaps and real competitor
+// names — but only if the prospect hasn't already replied to Step 3.
+
+function watchForScanAndSendVisibility(contactId, resolvedConvId) {
+  if (pendingScanWatch.has(contactId)) {
+    clearInterval(pendingScanWatch.get(contactId));
+    pendingScanWatch.delete(contactId);
+  }
+
+  const started = Date.now();
+
+  const handle = setInterval(async () => {
+    const contact = conversations.get(contactId);
+
+    // Stop if booked or prospect already replied to Step 3 (moved to Step 4+)
+    if (!contact || contact.booked || (contact.currentStep !== undefined && contact.currentStep > 3)) {
+      clearInterval(handle);
+      pendingScanWatch.delete(contactId);
+      return;
+    }
+
+    if (Date.now() - started > SCAN_TIMEOUT_MS) {
+      clearInterval(handle);
+      pendingScanWatch.delete(contactId);
+      console.log(`[ScanWatch] Scan timeout for ${contactId} — skipping visibility message`);
+      return;
+    }
+
+    const session = sessions.get(contactId);
+    if (session?.scanStatus !== 'complete') return; // still waiting
+
+    clearInterval(handle);
+    pendingScanWatch.delete(contactId);
+
+    const sr = session.scanResults;
+    if (!sr) return;
+
+    // Also abort if prospect replied while we were polling
+    const exch    = contact.exchanges || [];
+    const lastOut = [...exch].reverse().find(e => e.direction === 'outbound' && e.step === 3);
+    const lastIn  = [...exch].reverse().find(e => e.direction === 'inbound');
+    if (lastIn && lastOut && lastIn.timestamp > lastOut.timestamp) {
+      console.log(`[ScanWatch] ${contactId} already replied to Step 3 — skipping visibility message`);
+      return;
+    }
+
+    await sendScanVisibilityMessage(contactId, resolvedConvId, sr);
+  }, SCAN_POLL_MS);
+
+  pendingScanWatch.set(contactId, handle);
+  console.log(`[ScanWatch] Watching for scan completion for ${contactId}`);
+}
+
+function clearScanWatch(contactId) {
+  if (pendingScanWatch.has(contactId)) {
+    clearInterval(pendingScanWatch.get(contactId));
+    pendingScanWatch.delete(contactId);
+    console.log(`[ScanWatch] Cancelled scan watcher for ${contactId}`);
+  }
+}
+
+async function sendScanVisibilityMessage(contactId, resolvedConvId, sr) {
+  const contact = conversations.get(contactId);
+  if (!contact || contact.booked || contact.currentStep > 3) return;
+
+  const competitor   = sr?.topCompetitor?.name;
+  const visibleTop3  = sr?.visibleTop3  ?? 0;
+  const totalPoints  = sr?.totalPoints  ?? 25;
+
+  let msg;
+  if (competitor && visibleTop3 < Math.ceil(totalPoints * 0.6)) {
+    msg = `One more thing — just ran your visibility scan. You're showing up right around your building, but a few miles out ${competitor} is there and you're not. People searching from those areas are calling them, not you.`;
+  } else if (competitor) {
+    msg = `One more thing — just ran your visibility scan. You're showing up in most of your area, but ${competitor} is still winning the searches further from your building.`;
+  } else {
+    msg = `One more thing — just ran your visibility scan. There are gaps in your local search coverage — people looking for audiologists a few miles out aren't finding you.`;
+  }
+
+  try {
+    await ghl.sendMessage(contactId, msg);
+    conversations.addExchange(contactId, {
+      direction: 'outbound',
+      body: msg,
+      step: 3,
+      conversationId: resolvedConvId || null
+    });
+    brain.recordOutbound(contactId, msg, 3);
+    console.log(`[ScanWatch] Visibility follow-up sent to ${contactId}`);
+  } catch (err) {
+    console.error(`[ScanWatch] Failed to send visibility message for ${contactId}:`, err.message);
   }
 }
 
@@ -212,6 +334,8 @@ app.post('/webhooks/ghl/inbound', async (req, res) => {
 
   // Cancel any pending auto-send of Step 3 (they replied, so flow resumes normally)
   clearPendingStep3(contactId);
+  // Cancel scan-visibility watcher if the prospect replied to Step 3
+  clearScanWatch(contactId);
 
   enqueueJob({ contactId, conversationId, messageBody, firstName, city, phone });
 });
@@ -456,12 +580,10 @@ function recoverStateFromHistory(contactId, fresh, rawGhlMessages) {
       updates.currentStep = 3;
     } else if (bodyLower.includes('i pulled up') && bodyLower.includes('while we were talking')) {
       updates.currentStep = 4;
-    } else if (bodyLower.includes('lot not being captured') || (bodyLower.includes('expiring benefits') && bodyLower.includes('dormant'))) {
-      updates.currentStep = 7;
     } else if (bodyLower.includes('sid, our founder')) {
-      updates.currentStep = 8;
+      updates.currentStep = 5;
     } else if (bodyLower.includes('locked in') && bodyLower.includes('calendar invite')) {
-      updates.currentStep = 9;
+      updates.currentStep = 6;
     }
     if (updates.currentStep) {
       console.log(`[StateRecovery] Restored currentStep ${updates.currentStep} for ${contactId}`);
