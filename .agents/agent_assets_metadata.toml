@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "jLysTnNde7Rzt34GSVcJM"
+uri = "file://docs/app-documentation.md"
+type = "text"
+title = "Powered Up AI — Complete App Documentation"
