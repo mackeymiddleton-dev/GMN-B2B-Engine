@@ -215,6 +215,68 @@ app.post('/webhooks/ghl/inbound', async (req, res) => {
   enqueueJob({ contactId, conversationId, messageBody, firstName, city, phone });
 });
 
+// ─── State Recovery from GHL History ─────────────────────────────────────────
+// Called when local state may be incomplete (e.g. server restart). Scans the
+// raw GHL message history and patches any missing flags back into the contact.
+
+function recoverStateFromHistory(contactId, fresh, rawGhlMessages) {
+  if (!rawGhlMessages || rawGhlMessages.length === 0) return;
+
+  // GHL messages come newest-first — find the most recent outbound we sent
+  const lastOutbound = rawGhlMessages.find(m => {
+    const isInbound = m.direction === 'inbound' || m.direction === 2 ||
+                      m.messageType === 'inbound' || m.type === 2;
+    return !isInbound;
+  });
+  if (!lastOutbound) return;
+
+  const body = (lastOutbound.body || lastOutbound.message || '').trim();
+  const bodyLower = body.toLowerCase();
+  const updates = {};
+
+  // Recover awaitingRetryName: we asked them to re-provide name + street
+  if (!fresh?.awaitingRetryName && !fresh?.confirmationPending) {
+    if (bodyLower.includes("what's the exact name") && bodyLower.includes("google maps")) {
+      updates.awaitingRetryName = true;
+      console.log(`[StateRecovery] Restored awaitingRetryName for ${contactId}`);
+    }
+  }
+
+  // Recover confirmationPending: we sent an address confirmation question
+  if (!fresh?.confirmationPending && !fresh?.awaitingRetryName && !updates.awaitingRetryName) {
+    if (bodyLower.includes('is that the right one') || bodyLower.includes('reply yes or no')) {
+      const nameMatch = body.match(/^Found (.+?) at (.+?) —/i);
+      const name = nameMatch ? nameMatch[1] : (fresh?.practiceName || '');
+      const address = nameMatch ? nameMatch[2] : '';
+      const city = fresh?.practiceCity || fresh?.city || '';
+      updates.confirmationPending = { placeId: null, name, address, city, recovered: true };
+      console.log(`[StateRecovery] Restored confirmationPending for ${contactId}: "${name}"`);
+    }
+  }
+
+  // Recover currentStep from known scripted text patterns
+  if (!fresh?.currentStep || fresh.currentStep === 0) {
+    if (bodyLower.includes("you've got patients you haven't seen in 2+")) {
+      updates.currentStep = 3;
+    } else if (bodyLower.includes('i pulled up') && bodyLower.includes('while we were talking')) {
+      updates.currentStep = 4;
+    } else if (bodyLower.includes('lot not being captured') || (bodyLower.includes('expiring benefits') && bodyLower.includes('dormant'))) {
+      updates.currentStep = 7;
+    } else if (bodyLower.includes('sid, our founder')) {
+      updates.currentStep = 8;
+    } else if (bodyLower.includes('locked in') && bodyLower.includes('calendar invite')) {
+      updates.currentStep = 9;
+    }
+    if (updates.currentStep) {
+      console.log(`[StateRecovery] Restored currentStep ${updates.currentStep} for ${contactId}`);
+    }
+  }
+
+  if (Object.keys(updates).length > 0) {
+    conversations.update(contactId, updates);
+  }
+}
+
 // ─── Webhook Handler ──────────────────────────────────────────────────────────
 
 async function handleInbound({ contactId, conversationId, messageBody, firstName, city, phone }) {
@@ -263,7 +325,7 @@ async function handleInbound({ contactId, conversationId, messageBody, firstName
   brain.recordReply(contactId);
 
   // Reload fresh state after recording
-  const fresh = conversations.get(contactId);
+  let fresh = conversations.get(contactId);
 
   if (fresh?.booked) {
     console.log(`[Webhook] Contact ${contactId} already booked — skipping`);
@@ -282,7 +344,16 @@ async function handleInbound({ contactId, conversationId, messageBody, firstName
     }
   }
 
-  // ── 4.5. Handle address confirmation or name-retry states (no Claude call) ────
+  // ── 4.5. Fetch GHL history, recover any lost state, then handle flow ──────────
+  let rawGhlMessages = [];
+  if (resolvedConvId) {
+    rawGhlMessages = await ghl.fetchMessages(resolvedConvId);
+  }
+
+  // Recover state that may have been lost on server restart, then use it everywhere
+  recoverStateFromHistory(contactId, fresh, rawGhlMessages);
+  fresh = conversations.get(contactId);
+
   if (fresh?.confirmationPending) {
     return await handleConfirmationReply(contactId, messageBody, fresh, resolvedConvId);
   }
@@ -290,17 +361,10 @@ async function handleInbound({ contactId, conversationId, messageBody, firstName
     return await handleRetryName(contactId, messageBody, fresh, resolvedConvId);
   }
 
-  // Fetch full conversation from GHL (authoritative source)
-  let messages = [];
-  if (resolvedConvId) {
-    const ghlMessages = await ghl.fetchMessages(resolvedConvId);
-    messages = buildMessagesFromGhl(ghlMessages);
-  }
-
-  // If GHL messages are empty or unavailable, fall back to local exchanges
-  if (messages.length === 0) {
-    messages = buildMessagesFromLocal(fresh?.exchanges || []);
-  }
+  // Build Claude message history from already-fetched GHL messages
+  let messages = rawGhlMessages.length > 0
+    ? buildMessagesFromGhl(rawGhlMessages)
+    : buildMessagesFromLocal(fresh?.exchanges || []);
 
   if (messages.length === 0) {
     console.log(`[Webhook] No message history for ${contactId}`);
