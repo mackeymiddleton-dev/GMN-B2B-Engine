@@ -2,957 +2,656 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<title>Powered Up AI — Practice Analysis</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GMB Message Generator — Powered Up AI</title>
 <style>
-*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-html,body{height:100%;height:100dvh;overflow:hidden;overscroll-behavior:none;-webkit-overflow-scrolling:auto;touch-action:pan-y;background:#1a1a1a;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-/* Headline overlay */
-#overlay{position:fixed;inset:0;background:#0d0d0d;z-index:100;display:flex;align-items:center;justify-content:center;padding:28px 24px;transition:opacity 0.5s ease,transform 0.5s ease;cursor:pointer;overflow:hidden}
-#overlay::before{content:'';position:absolute;top:-30%;left:-10%;width:120%;height:70%;background:radial-gradient(ellipse at 50% 60%,rgba(245,158,11,0.13) 0%,transparent 70%);pointer-events:none}
-#overlay.fade-out{opacity:0;transform:scale(1.04);pointer-events:none}
-@keyframes fadeInUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
-.ov-inner{display:flex;flex-direction:column;align-items:center;gap:18px;max-width:340px;position:relative;z-index:1;width:100%}
-.ov-icon{font-size:46px;opacity:0;animation:fadeInUp 0.5s ease 0.1s forwards}
-.ov-kicker{font-size:11px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;color:#f59e0b;opacity:0;animation:fadeInUp 0.5s ease 0.35s forwards}
-.ov-headline{font-size:26px;font-weight:800;color:#fff;text-align:center;line-height:1.25;opacity:0;animation:fadeInUp 0.5s ease 0.65s forwards}
-.ov-sub{font-size:14px;color:#888;text-align:center;line-height:1.55;opacity:0;animation:fadeInUp 0.5s ease 0.95s forwards}
-.ov-stats{display:flex;width:100%;border:1px solid #222;border-radius:14px;overflow:hidden;opacity:0;animation:fadeInUp 0.5s ease 1.25s forwards;background:#151515}
-.ov-stat{flex:1;padding:13px 6px;text-align:center;border-right:1px solid #222}
-.ov-stat:last-child{border-right:none}
-.ov-stat-num{font-size:19px;font-weight:800;color:#f59e0b;line-height:1}
-.ov-stat-lbl{font-size:9px;color:#555;text-transform:uppercase;letter-spacing:0.07em;margin-top:4px;line-height:1.3}
-.ov-btn{width:100%;padding:17px;background:#f59e0b;color:#000;font-size:16px;font-weight:800;border:none;border-radius:14px;cursor:pointer;opacity:0;animation:fadeInUp 0.5s ease 1.55s forwards;-webkit-tap-highlight-color:transparent;letter-spacing:0.01em;transition:transform 0.1s ease}
-.ov-btn:active{transform:scale(0.97)}
-.ov-hint{font-size:11px;color:#3a3a3a;opacity:0;animation:fadeInUp 0.5s ease 1.8s forwards}
+body {
+  background: #0f0f0f;
+  color: #e8e8e8;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40px 16px 80px;
+}
 
-/* App shell — position:fixed keeps it anchored to visual viewport when iOS keyboard scrolls the page */
-#app{display:flex;flex-direction:column;position:fixed;left:0;right:0;top:0;height:100dvh;opacity:0;transition:opacity 0.4s ease}
-#app.visible{opacity:1}
+.logo {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: #555;
+  text-transform: uppercase;
+  margin-bottom: 40px;
+}
 
-/* Top bar */
-#topbar{display:flex;align-items:center;gap:10px;padding:0 14px;height:50px;background:#1a1a1a;flex-shrink:0;border-bottom:1px solid #2a2a2a}
-.avatar{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,#f59e0b,#ef4444);flex-shrink:0}
-.brand{font-size:15px;font-weight:600;color:#fff;flex:1}
-.online-dot{width:8px;height:8px;border-radius:50%;background:#22c55e;flex-shrink:0}
-#countdown{font-size:11px;color:#555;white-space:nowrap}
+h1 {
+  font-size: 26px;
+  font-weight: 700;
+  color: #fff;
+  text-align: center;
+  max-width: 480px;
+  line-height: 1.3;
+  margin-bottom: 8px;
+}
 
-/* Progress area */
-#progress-wrap{flex-shrink:0;background:#1a1a1a}
-#progress-bar-container{height:3px;background:#333;position:relative;overflow:hidden}
-#progress-bar{height:100%;background:#f59e0b;width:15%;transition:width 0.6s ease,background 0.4s ease}
-#progress-bar.pulse{animation:barPulse 0.3s ease}
-#progress-bar.complete{background:#22c55e}
-@keyframes barPulse{0%{filter:brightness(1)}50%{filter:brightness(1.8)}100%{filter:brightness(1)}}
-#step-label{font-size:11px;color:#666;padding:4px 14px 4px;height:19px;overflow:hidden}
+.subtitle {
+  font-size: 14px;
+  color: #666;
+  text-align: center;
+  max-width: 400px;
+  margin-bottom: 40px;
+  line-height: 1.5;
+}
 
-/* Chat area */
-#chat-area{flex:1;overflow-y:auto;padding:12px 14px;display:flex;flex-direction:column;gap:8px;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
-.msg{max-width:80%;padding:10px 14px;border-radius:18px;font-size:15px;line-height:1.45;word-break:break-word;animation:msgIn 0.2s ease}
-@keyframes msgIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
-.msg.user{align-self:flex-end;background:#007AFF;color:#fff;border-bottom-right-radius:4px}
-.msg.ai{align-self:flex-start;background:#2C2C2E;color:#fff;border-bottom-left-radius:4px}
-.msg.ai.streaming{border-bottom-left-radius:4px}
+.card {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 16px;
+  padding: 32px;
+  width: 100%;
+  max-width: 520px;
+}
 
-/* Typing indicator */
-#typing{align-self:flex-start;background:#2C2C2E;padding:10px 14px;border-radius:18px;border-bottom-left-radius:4px;display:none}
-.dots{display:flex;gap:5px;align-items:center}
-.dot-pulse{width:8px;height:8px;border-radius:50%;background:#888;animation:dotPulse 1.4s infinite ease-in-out}
-.dot-pulse:nth-child(2){animation-delay:0.2s}
-.dot-pulse:nth-child(3){animation-delay:0.4s}
-@keyframes dotPulse{0%,80%,100%{transform:scale(0.8);opacity:0.5}40%{transform:scale(1);opacity:1}}
+.field {
+  margin-bottom: 20px;
+}
 
-/* Inline scan map card */
-.scan-map-card{width:92%;align-self:flex-start;background:#1E1E1E;border:1px solid #f59e0b;border-radius:18px;overflow:hidden;animation:msgIn 0.3s ease;margin-top:2px}
-.scan-map-header{padding:12px 14px 8px}
-.scan-map-title{font-size:14px;font-weight:700;color:#fff}
-.scan-map-sub{font-size:11px;color:#666;margin-top:2px}
-.scan-map-area{width:100%;height:270px;background:#1a1a1a;position:relative}
-.scan-map-area #gmapEl{width:100%;height:100%}
-.scan-map-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:13px;color:#555}
-.scan-map-legend{display:flex;gap:12px;padding:8px 14px;border-top:1px solid #2a2a2a}
-.legend-item{display:flex;align-items:center;gap:5px;font-size:11px;color:#888}
-.legend-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
-.scan-map-stats{padding:6px 14px 10px;display:flex;flex-direction:column;gap:5px;border-top:1px solid #2a2a2a}
-.scan-stat-row{display:flex;align-items:center;gap:8px;font-size:13px;color:#ccc}
-.stat-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
-.scan-map-cta{padding:8px 14px 14px}
-.scan-map-cta a{display:block;background:#f59e0b;color:#000;text-align:center;font-weight:700;font-size:14px;padding:12px;border-radius:10px;text-decoration:none}
+label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #888;
+  margin-bottom: 8px;
+}
 
-/* Calendar widget */
-.calendar-bubble{background:#1E1E1E;border:1px solid #f59e0b;border-radius:14px;padding:12px;width:100%}
-.calendar-bubble p{font-size:13px;color:#aaa;margin-bottom:10px}
-.calendar-bubble iframe{width:100%;height:500px;border:none;border-radius:8px}
+input[type="text"] {
+  width: 100%;
+  background: #111;
+  border: 1px solid #333;
+  border-radius: 10px;
+  color: #fff;
+  font-size: 15px;
+  padding: 13px 16px;
+  outline: none;
+  transition: border-color 0.15s;
+  font-family: inherit;
+}
 
-/* Input bar */
-#input-bar{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#1C1C1E;flex-shrink:0;border-top:1px solid #2a2a2a}
-#msg-input{flex:1;background:#2C2C2E;color:#fff;border:none;border-radius:20px;padding:10px 14px;font-size:15px;outline:none;font-family:inherit;resize:none;max-height:120px;line-height:1.4}
-#msg-input::placeholder{color:#555}
-#send-btn{width:38px;height:38px;border-radius:50%;background:#f59e0b;border:none;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:transform 0.1s}
-#send-btn:active{transform:scale(0.92)}
-#send-btn svg{width:16px;height:16px;fill:none;stroke:#000;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}
+input[type="text"]:focus {
+  border-color: #f59e0b;
+}
 
-/* Social proof ticker */
-#ticker{background:#111;display:flex;align-items:center;justify-content:center;flex-shrink:0;min-height:22px;padding-bottom:env(safe-area-inset-bottom)}
-#ticker-text{font-size:11px;color:#555;transition:opacity 0.4s ease}
-#ticker-text.fade{opacity:0}
+input[type="text"]::placeholder {
+  color: #444;
+}
 
-/* Confetti */
-.confetti-piece{position:fixed;width:6px;height:6px;background:#f59e0b;opacity:0;animation:confettiFall 1s ease forwards;pointer-events:none;z-index:99}
-@keyframes confettiFall{0%{opacity:1;transform:translateY(0) rotate(0deg)}100%{opacity:0;transform:translateY(80px) rotate(360deg)}}
+.search-btn {
+  width: 100%;
+  background: #222;
+  border: 1px solid #333;
+  border-radius: 10px;
+  color: #aaa;
+  font-size: 13px;
+  padding: 11px 16px;
+  cursor: pointer;
+  text-align: left;
+  margin-bottom: 20px;
+  transition: border-color 0.15s, color 0.15s;
+  font-family: inherit;
+}
 
-/* Checkmark */
-#step-check{display:inline-block;margin-left:4px;opacity:0;transition:opacity 0.3s}
-#step-check.show{opacity:1}
+.search-btn:hover:not(:disabled) {
+  border-color: #555;
+  color: #ddd;
+}
 
-/* Place disambiguation cards */
-.places-cards{display:flex;flex-direction:column;gap:10px;width:88%;align-self:flex-start;margin-top:4px}
-.place-card{background:#1C1C1E;border:1px solid #333;border-radius:16px;overflow:hidden;cursor:pointer;transition:border-color 0.15s ease,transform 0.1s ease;-webkit-tap-highlight-color:transparent;animation:msgIn 0.2s ease}
-.place-card:hover,.place-card:active{border-color:#f59e0b;transform:scale(1.01)}
-.place-card-photo{width:100%;height:118px;background:#2a2a2a center/cover no-repeat;border-bottom:1px solid #2a2a2a}
-.place-card-photo-placeholder{width:100%;height:118px;background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);display:flex;align-items:center;justify-content:center;font-size:36px}
-.place-card-body{padding:11px 14px 13px}
-.place-card-name{font-size:14px;font-weight:700;color:#fff;line-height:1.3;margin-bottom:5px}
-.place-card-stars{display:flex;align-items:center;gap:4px;margin-bottom:4px}
-.place-card-stars-filled{color:#f59e0b;font-size:13px;letter-spacing:0.5px}
-.place-card-rating-num{font-size:12px;font-weight:600;color:#f59e0b}
-.place-card-reviews{font-size:12px;color:#666}
-.place-card-address{font-size:11px;color:#777;display:flex;align-items:flex-start;gap:5px;line-height:1.4}
-.place-card-address svg{flex-shrink:0;margin-top:1px}
-.place-card-category{display:inline-block;background:#2a2a2a;border-radius:6px;padding:2px 8px;font-size:10px;color:#999;margin-top:6px;text-transform:capitalize}
-.place-card-none{background:#161616;border:1px dashed #2a2a2a;border-radius:14px;padding:13px 16px;color:#555;font-size:13px;text-align:center;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:border-color 0.15s,color 0.15s}
-.place-card-none:hover,.place-card-none:active{border-color:#555;color:#888}
+.search-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+#listing-picker {
+  display: none;
+  margin-bottom: 20px;
+}
+
+.listing-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #888;
+  margin-bottom: 10px;
+}
+
+.listing-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid #2a2a2a;
+  border-radius: 10px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  background: #111;
+}
+
+.listing-option:hover {
+  border-color: #f59e0b;
+  background: #1a1600;
+}
+
+.listing-option.selected {
+  border-color: #f59e0b;
+  background: #1a1600;
+}
+
+.listing-photo {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: #2a2a2a;
+}
+
+.listing-photo-placeholder {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  background: #2a2a2a;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+}
+
+.listing-info { flex: 1; min-width: 0; }
+
+.listing-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.listing-address {
+  font-size: 12px;
+  color: #666;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.listing-meta {
+  font-size: 12px;
+  color: #888;
+  margin-top: 3px;
+}
+
+.listing-check {
+  font-size: 18px;
+  color: #f59e0b;
+  opacity: 0;
+  flex-shrink: 0;
+}
+
+.listing-option.selected .listing-check {
+  opacity: 1;
+}
+
+.generate-btn {
+  width: 100%;
+  background: #f59e0b;
+  border: none;
+  border-radius: 10px;
+  color: #000;
+  font-size: 15px;
+  font-weight: 700;
+  padding: 15px;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+  font-family: inherit;
+}
+
+.generate-btn:hover:not(:disabled) {
+  background: #fbbf24;
+}
+
+.generate-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+#loading {
+  display: none;
+  text-align: center;
+  padding: 48px 0 32px;
+  width: 100%;
+  max-width: 520px;
+}
+
+.spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid #2a2a2a;
+  border-top-color: #f59e0b;
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+  margin: 0 auto 20px;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.loading-text {
+  font-size: 15px;
+  color: #888;
+  line-height: 1.6;
+}
+
+.loading-steps {
+  margin-top: 20px;
+  font-size: 13px;
+  color: #555;
+}
+
+.loading-step {
+  padding: 5px 0;
+  transition: color 0.3s;
+}
+
+.loading-step.active { color: #f59e0b; }
+.loading-step.done { color: #22c55e; }
+
+#result {
+  display: none;
+  width: 100%;
+  max-width: 520px;
+}
+
+.result-card {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 16px;
+  padding: 28px;
+  margin-bottom: 12px;
+}
+
+.result-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #888;
+  margin-bottom: 14px;
+}
+
+#message-output {
+  width: 100%;
+  background: #111;
+  border: 1px solid #2a2a2a;
+  border-radius: 10px;
+  color: #e8e8e8;
+  font-size: 15px;
+  line-height: 1.65;
+  padding: 16px;
+  resize: vertical;
+  min-height: 160px;
+  font-family: inherit;
+  outline: none;
+}
+
+#message-output:focus {
+  border-color: #444;
+}
+
+.copy-btn {
+  width: 100%;
+  background: #22c55e;
+  border: none;
+  border-radius: 10px;
+  color: #000;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 13px;
+  cursor: pointer;
+  margin-top: 12px;
+  transition: background 0.15s;
+  font-family: inherit;
+}
+
+.copy-btn:hover { background: #16a34a; color: #fff; }
+.copy-btn.copied { background: #166534; color: #fff; }
+
+.scan-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #111;
+  border: 1px solid #2a2a2a;
+  border-radius: 10px;
+  padding: 14px 16px;
+  text-decoration: none;
+  color: #aaa;
+  font-size: 13px;
+  margin-top: 12px;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.scan-link:hover {
+  border-color: #555;
+  color: #fff;
+}
+
+.scan-link-icon { font-size: 18px; }
+
+.reset-btn {
+  width: 100%;
+  background: transparent;
+  border: 1px solid #2a2a2a;
+  border-radius: 10px;
+  color: #666;
+  font-size: 14px;
+  padding: 13px;
+  cursor: pointer;
+  margin-top: 8px;
+  transition: border-color 0.15s, color 0.15s;
+  font-family: inherit;
+}
+
+.reset-btn:hover {
+  border-color: #555;
+  color: #aaa;
+}
+
+.error-msg {
+  background: #1a0a0a;
+  border: 1px solid #5a1a1a;
+  border-radius: 10px;
+  color: #f87171;
+  font-size: 14px;
+  padding: 14px 16px;
+  margin-top: 16px;
+  display: none;
+}
 </style>
 </head>
 <body>
 
-<!-- Headline overlay -->
-<div id="overlay">
-  <div class="ov-inner">
-    <div class="ov-icon">🔍</div>
-    <div class="ov-kicker">Free Practice Visibility Scan</div>
-    <div class="ov-headline">Patients are searching. Are they finding you — or your competitor?</div>
-    <div class="ov-sub">In 3 minutes we'll show you exactly where your practice is invisible online and how much revenue that's costing you.</div>
-    <div class="ov-stats">
-      <div class="ov-stat"><div class="ov-stat-num">900+</div><div class="ov-stat-lbl">Practices Scanned</div></div>
-      <div class="ov-stat"><div class="ov-stat-num">$94K</div><div class="ov-stat-lbl">Avg Revenue Gap</div></div>
-      <div class="ov-stat"><div class="ov-stat-num">3 min</div><div class="ov-stat-lbl">To Complete</div></div>
-    </div>
-    <button class="ov-btn" id="ov-btn">Reveal My Report →</button>
-    <div class="ov-hint">No credit card · No obligation</div>
+<div class="logo">Powered Up AI</div>
+
+<h1>Generate Your Prospect Message</h1>
+<p class="subtitle">Enter a Google My Business listing and get a ready-to-paste message based on their real Maps data.</p>
+
+<div class="card" id="form-card">
+  <div class="field">
+    <label>Practice Name</label>
+    <input type="text" id="practice-name" placeholder="e.g. Clarity Hearing Center" autocomplete="off" />
+  </div>
+  <div class="field">
+    <label>City</label>
+    <input type="text" id="city" placeholder="e.g. Austin, TX" autocomplete="off" />
+  </div>
+
+  <button class="search-btn" id="find-listing-btn">🔍 Find exact GMB listing (optional)</button>
+
+  <div id="listing-picker">
+    <div class="listing-label">Select their listing</div>
+    <div id="listing-options"></div>
+  </div>
+
+  <button class="generate-btn" id="generate-btn">Generate Message</button>
+  <div class="error-msg" id="error-msg"></div>
+</div>
+
+<div id="loading">
+  <div class="spinner"></div>
+  <div class="loading-text">Pulling their Google Maps data&hellip;</div>
+  <div class="loading-steps">
+    <div class="loading-step" id="step-research">📍 Fetching profile &amp; competitors</div>
+    <div class="loading-step" id="step-scan">🗺️ Running visibility grid scan</div>
+    <div class="loading-step" id="step-generate">✍️ Generating message</div>
   </div>
 </div>
 
-<!-- App -->
-<div id="app">
-  <div id="topbar">
-    <div class="avatar"></div>
-    <span class="brand">Powered Up AI</span>
-    <span class="online-dot"></span>
-    <span id="countdown">Analysis expires in 24:00:00</span>
+<div id="result">
+  <div class="result-card">
+    <div class="result-label">Your message — paste this into the chat</div>
+    <textarea id="message-output" readonly></textarea>
+    <button class="copy-btn" id="copy-btn">Copy to clipboard</button>
+    <a class="scan-link" id="scan-link" href="#" target="_blank">
+      <span class="scan-link-icon">📊</span>
+      <span>View their full Maps visibility scan</span>
+    </a>
   </div>
-
-  <div id="progress-wrap">
-    <div id="progress-bar-container"><div id="progress-bar"></div></div>
-    <div id="step-label">Setting up your analysis...<span id="step-check">✓</span></div>
-  </div>
-
-  <div id="chat-area">
-    <div id="typing"><div class="dots"><div class="dot-pulse"></div><div class="dot-pulse"></div><div class="dot-pulse"></div></div></div>
-  </div>
-
-  <div id="input-bar">
-    <textarea id="msg-input" rows="1" placeholder="Type a message..." autocomplete="off" autocorrect="off"></textarea>
-    <button id="send-btn" aria-label="Send">
-      <svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-    </button>
-  </div>
-
-  <div id="ticker"><span id="ticker-text"></span></div>
+  <button class="reset-btn" id="reset-btn">Generate for another prospect</button>
 </div>
 
 <script>
-(function() {
-  // ── State ──────────────────────────────────────────────────────────────────
-  const SOCIAL_PROOF = [
-    "14 practices analyzed this week",
-    "Average practice has $127K in uncaptured revenue",
-    "Most practices are invisible 5+ miles from their office"
-  ];
-  const PROGRESS_STEPS = {
-    'onboarding-1': 15, 'onboarding-2': 25, 'onboarding-3': 30,
-    'onboarding-4': 45, 'onboarding-5': 50, 'onboarding-6': 55,
-    'step-1': 58, 'step-2': 65, 'step-3': 72,
-    'step-4': 78, 'step-5': 80, 'step-6': 88,
-    'step-7': 93, 'booking': 96, 'complete': 100
-  };
-  const STEP_LABELS = {
-    'onboarding-1': 'Setting up your analysis...',
-    'onboarding-2': 'Setting up your analysis...',
-    'onboarding-3': 'Pulling data on your practice...',
-    'onboarding-4': 'Pulling data on your practice...',
-    'onboarding-5': 'Pulling data on your practice...',
-    'onboarding-6': 'Pulling data on your practice...',
-    'step-1': 'Analyzing your revenue gaps...',
-    'step-2': 'Analyzing your revenue gaps...',
-    'step-3': 'Analyzing your revenue gaps...',
-    'step-4': 'Checking your referral network...',
-    'step-5': 'Checking your referral network...',
-    'step-6': 'Scanning your Google presence...',
-    'step-7': 'Building your report...',
-    'booking': 'Almost done — one last thing',
-    'complete': '✓ Complete'
-  };
-  const PLACEHOLDERS = {
-    practice: 'Type your practice name...',
-    city: 'Type your city...',
-    name: 'Type your first name...',
-    phone: 'Type your mobile number...',
-    yesno: 'Yes / No',
-    default: 'Type a message...'
-  };
+let selectedPlaceId = null;
 
-  let sessionId = null;
-  let sessionData = { name: null, phone: null, practiceName: null, city: null, confirmedPlaceId: null };
-  let currentStep = 'onboarding-1';
-  let sessionStart = Date.now();
-  let isStreaming = false;
-  let awaitingPlaceSelection = false;
-  let calendarWidgetUrl = '';
-  let tickerIdx = 0;
-  let researchPolling = null;
-  let scanPolling = null;
-  let scanDataReady = false;
+const practiceInput = document.getElementById('practice-name');
+const cityInput = document.getElementById('city');
+const findListingBtn = document.getElementById('find-listing-btn');
+const listingPicker = document.getElementById('listing-picker');
+const listingOptions = document.getElementById('listing-options');
+const generateBtn = document.getElementById('generate-btn');
+const errorMsg = document.getElementById('error-msg');
+const formCard = document.getElementById('form-card');
+const loading = document.getElementById('loading');
+const result = document.getElementById('result');
 
-  function isStep6OrLater(step) {
-    return ['step-6', 'booking', 'complete'].includes(step);
+cityInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') generateBtn.click();
+});
+
+practiceInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') cityInput.focus();
+});
+
+findListingBtn.addEventListener('click', async () => {
+  const name = practiceInput.value.trim();
+  const city = cityInput.value.trim();
+  if (!name || !city) {
+    showError('Please enter both a practice name and city first.');
+    return;
   }
 
-  // ── Init ───────────────────────────────────────────────────────────────────
-  async function init() {
-    // Load config headline
-    const params = new URLSearchParams(location.search);
-    if (params.get('sessionId')) sessionId = params.get('sessionId');
-    if (params.get('name')) sessionData.name = params.get('name');
-    if (params.get('phone')) sessionData.phone = params.get('phone');
+  findListingBtn.textContent = 'Searching…';
+  findListingBtn.disabled = true;
+  hideError();
 
-    startTicker();
-    startCountdown();
-
-    // Create or restore session
-    if (!sessionId) {
-      const r = await fetch('/api/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-      const d = await r.json();
-      sessionId = d.sessionId;
-      sessionStart = d.createdAt;
-    }
-
-    // ── Visual viewport sync (keeps input above keyboard on iOS) ──────────────
-    const app = document.getElementById('app');
-    function syncViewport() {
-      const vv = window.visualViewport;
-      if (!vv) return;
-      // Pin app to the exact visible area — prevents iOS keyboard scroll from hiding content
-      app.style.top = vv.offsetTop + 'px';
-      app.style.height = vv.height + 'px';
-    }
-    if (window.visualViewport) {
-      window.visualViewport.addEventListener('resize', syncViewport);
-      window.visualViewport.addEventListener('scroll', syncViewport);
-      syncViewport(); // Set immediately so there's no flash
-    }
-
-    // ── Overlay dismiss (tap or auto after 3s) ────────────────────────────────
-    let overlayDismissed = false;
-    function dismissOverlay() {
-      if (overlayDismissed) return;
-      overlayDismissed = true;
-      const overlay = document.getElementById('overlay');
-      overlay.classList.add('fade-out');
-      app.classList.add('visible');
-      setTimeout(() => {
-        overlay.style.display = 'none';
-        // Focus input — works as keyboard trigger when called from a tap gesture
-        document.getElementById('msg-input').focus();
-        sendFirstMessage();
-      }, 600);
-    }
-
-    document.getElementById('overlay').addEventListener('click', dismissOverlay);
-    document.getElementById('overlay').addEventListener('touchend', e => { e.preventDefault(); dismissOverlay(); });
-    setTimeout(dismissOverlay, 3000);
-  }
-
-  async function sendFirstMessage() {
-    // Trigger first AI message with empty user context
-    await sendToAI('__init__');
-  }
-
-  // ── Chat ───────────────────────────────────────────────────────────────────
-  async function sendMessage() {
-    const input = document.getElementById('msg-input');
-    const text = input.value.trim();
-    if (!text || isStreaming || awaitingPlaceSelection) return;
-
-    input.value = '';
-    input.style.height = 'auto';
-    input.placeholder = PLACEHOLDERS.default;
-
-    appendMessage('user', text);
-    const skipAI = await detectUserData(text);
-    if (!skipAI) {
-      await sendToAI(text);
-    }
-  }
-
-  async function sendToAI(userMsg) {
-    isStreaming = true;
-    showTyping();
-
-    const chatArea = document.getElementById('chat-area');
-    let aiBubble = null;
-    let fullText = '';
-
-    try {
-      const resp = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, message: userMsg })
-      });
-
-      if (!resp.ok) throw new Error('Request failed');
-
-      const reader = resp.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      hideTyping();
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop();
-
-        for (const line of lines) {
-          if (!line.startsWith('data:')) continue;
-          try {
-            const evt = JSON.parse(line.slice(5).trim());
-            if (evt.type === 'token') {
-              if (!aiBubble) {
-                aiBubble = createAIBubble();
-              }
-              fullText += evt.text;
-              renderAIText(aiBubble, fullText);
-              scrollChat();
-            } else if (evt.type === 'done') {
-              if (evt.currentStep) {
-                currentStep = evt.currentStep;
-                updateProgress(currentStep);
-                // If we just arrived at step-6 and the scan was already done, show the map now
-                if (isStep6OrLater(currentStep) && scanDataReady) appendScanMap();
-              }
-              if (evt.scanReady) {
-                handleScanReady();
-              }
-              finalizeAIResponse(aiBubble, fullText);
-            } else if (evt.type === 'error') {
-              hideTyping();
-              appendMessage('ai', evt.message || 'Something went wrong.');
-            }
-          } catch {}
-        }
-      }
-    } catch (err) {
-      hideTyping();
-      appendMessage('ai', 'Connection issue — please try again.');
-    }
-
-    isStreaming = false;
-    document.getElementById('msg-input').focus();
-  }
-
-  async function detectUserData(text) {
-    const step = currentStep;
-
-    if (step === 'onboarding-1' && !sessionData.practiceName) {
-      sessionData.practiceName = text;
-      updateSession({ practiceName: text, currentStep: 'onboarding-2' });
-      updateProgress('onboarding-2');
-      startResearchPolling();
-      updatePlaceholderFromStep();
-      return false;
-    }
-
-    if (step === 'onboarding-2' && !sessionData.city) {
-      sessionData.city = text;
-      // Run places disambiguation before triggering research
-      const skipAI = await doPlacesDisambiguation(text);
-      if (!skipAI) updatePlaceholderFromStep();
-      return skipAI;
-    }
-
-    if (!sessionData.name && /^[A-Za-z][\w\s'-]{0,30}$/.test(text) && text.split(' ').length <= 3) {
-      if (step === 'onboarding-4') {
-        sessionData.name = text;
-        updateSession({ name: text, currentStep: 'onboarding-5' });
-        updateProgress('onboarding-4');
-      }
-    } else if (!sessionData.phone && /^[\d\s\-\(\)\+]{7,}$/.test(text.replace(/[^0-9+]/g, '').length >= 7 ? text : '')) {
-      sessionData.phone = text;
-      updateSession({ phone: text, currentStep: 'onboarding-6' });
-      updateProgress('onboarding-5');
-    }
-
-    updatePlaceholderFromStep();
-    return false;
-  }
-
-  // ── Places disambiguation ─────────────────────────────────────────────────────
-  async function doPlacesDisambiguation(city) {
-    try {
-      const resp = await fetch('/api/places/search', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ practiceName: sessionData.practiceName, city })
-      });
-      const data = await resp.json();
-      const results = data.results || [];
-
-      if (!results.length) {
-        finalizeCitySelection(city, null);
-        return false;
-      }
-
-      // Always show picker cards so the user can confirm their exact listing
-      awaitingPlaceSelection = true;
-      document.getElementById('msg-input').placeholder = 'Tap your listing to confirm it...';
-      showPlacesCards(results, city);
-      return true;
-    } catch {
-      finalizeCitySelection(city, null);
-      return false;
-    }
-  }
-
-  function finalizeCitySelection(city, placeId) {
-    const updates = { city, currentStep: 'onboarding-3' };
-    if (placeId) {
-      updates.confirmedPlaceId = placeId;
-      sessionData.confirmedPlaceId = placeId;
-    }
-    updateSession(updates);
-    updateProgress('onboarding-3');
-    animateResearchBar();
-    startScanPolling();
-  }
-
-  function renderStars(rating) {
-    const full = Math.floor(rating);
-    const half = (rating - full) >= 0.5 ? 1 : 0;
-    const empty = 5 - full - half;
-    return '★'.repeat(full) + (half ? '½' : '') + '☆'.repeat(empty);
-  }
-
-  function showPlacesCards(results, city) {
-    const chatArea = document.getElementById('chat-area');
-
-    const prompt = document.createElement('div');
-    prompt.className = 'msg ai';
-    prompt.textContent = results.length === 1
-      ? 'I found this listing — is this your practice?'
-      : 'I found a few listings nearby — which one is yours?';
-    chatArea.insertBefore(prompt, document.getElementById('typing'));
-
-    const container = document.createElement('div');
-    container.className = 'places-cards';
-    container.id = 'places-cards';
-
-    results.forEach(place => {
-      const card = document.createElement('div');
-      card.className = 'place-card';
-
-      const photoHtml = place.photoUrl
-        ? `<div class="place-card-photo" style="background-image:url('${place.photoUrl}')"></div>`
-        : `<div class="place-card-photo-placeholder">🏥</div>`;
-
-      const starsHtml = place.rating
-        ? `<div class="place-card-stars">
-            <span class="place-card-stars-filled">${renderStars(place.rating)}</span>
-            <span class="place-card-rating-num">${place.rating}</span>
-            <span class="place-card-reviews">(${(place.userRatingsTotal || 0).toLocaleString()} reviews)</span>
-           </div>`
-        : '';
-
-      const categoryHtml = place.category
-        ? `<div class="place-card-category">${place.category}</div>`
-        : '';
-
-      const pinSvg = `<svg width="10" height="13" viewBox="0 0 10 13" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 0C2.24 0 0 2.24 0 5c0 3.75 5 8 5 8s5-4.25 5-8c0-2.76-2.24-5-5-5zm0 6.5A1.5 1.5 0 1 1 5 3.5a1.5 1.5 0 0 1 0 3z" fill="#666"/></svg>`;
-
-      card.innerHTML = `
-        ${photoHtml}
-        <div class="place-card-body">
-          <div class="place-card-name">${place.name}</div>
-          ${starsHtml}
-          <div class="place-card-address">${pinSvg}<span>${place.address}</span></div>
-          ${categoryHtml}
-        </div>`;
-
-      card.addEventListener('click', () => selectPlace(place, city));
-      card.addEventListener('touchend', e => { e.preventDefault(); selectPlace(place, city); });
-      container.appendChild(card);
+  try {
+    const resp = await fetch('/api/places/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ practiceName: name, city })
     });
+    const data = await resp.json();
 
-    const noneCard = document.createElement('div');
-    noneCard.className = 'place-card-none';
-    noneCard.textContent = "None of these — continue anyway";
-    noneCard.addEventListener('click', () => selectPlace(null, city));
-    noneCard.addEventListener('touchend', e => { e.preventDefault(); selectPlace(null, city); });
-    container.appendChild(noneCard);
-
-    chatArea.insertBefore(container, document.getElementById('typing'));
-    scrollChat();
-  }
-
-  async function selectPlace(place, city) {
-    if (!awaitingPlaceSelection) return;
-    awaitingPlaceSelection = false;
-
-    const cards = document.getElementById('places-cards');
-    if (cards) cards.remove();
-
-    const placeId = place ? place.placeId : null;
-    finalizeCitySelection(city, placeId);
-
-    // Continue AI conversation with the original city message
-    await sendToAI(city);
-  }
-
-  function updatePlaceholderFromStep() {
-    const input = document.getElementById('msg-input');
-    if (!sessionData.practiceName) input.placeholder = PLACEHOLDERS.practice;
-    else if (!sessionData.city) input.placeholder = PLACEHOLDERS.city;
-    else if (!sessionData.name) input.placeholder = PLACEHOLDERS.name;
-    else if (!sessionData.phone) input.placeholder = PLACEHOLDERS.phone;
-    else input.placeholder = PLACEHOLDERS.default;
-  }
-
-  function renderAIText(bubble, text) {
-    const display = text.replace(/\[STEP:[^\]]+\]/g, '').replace(/https?:\/\/\S+\/scan\/[a-f0-9-]+/g, '').trim();
-    bubble.textContent = display;
-  }
-
-  function finalizeAIResponse(bubble, fullText) {
-    if (!bubble) return;
-    const display = fullText.replace(/\[STEP:[^\]]+\]/g, '').replace(/https?:\/\/\S+\/scan\/[a-f0-9-]+/g, '').trim();
-    bubble.textContent = display;
-
-    // Calendar widget
-    if (currentStep === 'booking' || /grab your time slot|pick a morning|pull up the calendar|here's the link to book/i.test(display)) {
-      appendCalendarWidget();
-      setStepLabel('booking');
+    if (!data.results || !data.results.length) {
+      showError('No listings found. Try a different name or city spelling.');
+      return;
     }
 
-    // Booking confirmation
-    if (currentStep === 'complete' || /locked in|calendar invite|talk soon|you're all set/i.test(display)) {
-      completeBooking();
-    }
-
-    // Detect if AI just asked for a name/phone
-    const inp = document.getElementById('msg-input');
-    if (/first name/i.test(display)) inp.placeholder = PLACEHOLDERS.name;
-    else if (/mobile number|phone/i.test(display)) inp.placeholder = PLACEHOLDERS.phone;
-    else if (/practice.*name|name.*practice/i.test(display)) inp.placeholder = PLACEHOLDERS.practice;
-    else if (/city|where.*located/i.test(display)) inp.placeholder = PLACEHOLDERS.city;
-    else if (/\?$/.test(display.trimEnd())) inp.placeholder = PLACEHOLDERS.yesno;
-
-    // Keep keyboard up — re-focus input after AI finishes responding
-    if (currentStep !== 'booking' && currentStep !== 'complete') {
-      setTimeout(() => inp.focus(), 50);
-    }
+    renderListings(data.results);
+    listingPicker.style.display = 'block';
+  } catch {
+    showError('Search failed. You can still generate without selecting a listing.');
+  } finally {
+    findListingBtn.textContent = '🔍 Find exact GMB listing (optional)';
+    findListingBtn.disabled = false;
   }
+});
 
-  // ── DOM helpers ─────────────────────────────────────────────────────────────
-  function appendMessage(role, text) {
-    const chatArea = document.getElementById('chat-area');
+function renderListings(results) {
+  listingOptions.innerHTML = '';
+  selectedPlaceId = null;
+
+  results.forEach(r => {
     const div = document.createElement('div');
-    div.className = `msg ${role}`;
-    div.textContent = text;
-    chatArea.insertBefore(div, document.getElementById('typing'));
-    scrollChat();
-    return div;
-  }
+    div.className = 'listing-option';
+    div.dataset.placeId = r.placeId;
 
-  function createAIBubble() {
-    const chatArea = document.getElementById('chat-area');
-    const div = document.createElement('div');
-    div.className = 'msg ai streaming';
-    chatArea.insertBefore(div, document.getElementById('typing'));
-    scrollChat();
-    return div;
-  }
+    const photoEl = r.photoUrl
+      ? `<img class="listing-photo" src="${r.photoUrl}" alt="">`
+      : `<div class="listing-photo-placeholder">🏥</div>`;
 
-  async function appendScanMap() {
-    if (document.getElementById('inline-scan-map')) return; // already shown
+    const stars = r.rating ? `⭐ ${r.rating} · ${Number(r.userRatingsTotal).toLocaleString()} reviews` : '';
+    const cat = r.category ? ` · ${r.category}` : '';
 
-    const chatArea = document.getElementById('chat-area');
-
-    // Fetch scan data
-    let scanData = {};
-    try {
-      const r = await fetch('/api/scan/data/' + sessionId);
-      scanData = await r.json();
-    } catch {}
-
-    const sr = scanData.scanResults || {};
-    const lat = scanData.lat || 0;
-    const lng = scanData.lng || 0;
-    const practiceName = scanData.practiceName || 'Your Practice';
-    const city = scanData.city || sessionData.city || 'your area';
-    const comp = sr.topCompetitor;
-
-    const card = document.createElement('div');
-    card.className = 'scan-map-card';
-    card.innerHTML = `
-      <div class="scan-map-header">
-        <div class="scan-map-title">📍 ${practiceName} — Visibility Map</div>
-        <div class="scan-map-sub">audiologist · 5-mile radius · ${city}</div>
+    div.innerHTML = `
+      ${photoEl}
+      <div class="listing-info">
+        <div class="listing-name">${esc(r.name)}</div>
+        <div class="listing-address">${esc(r.address)}</div>
+        ${stars ? `<div class="listing-meta">${stars}${cat}</div>` : ''}
       </div>
-      <div class="scan-map-area">
-        <div id="gmapEl" style="width:100%;height:100%"></div>
-        <div class="scan-map-loading" id="map-loading-msg">Loading map…</div>
-      </div>
-      <div class="scan-map-legend">
-        <div class="legend-item"><span class="legend-dot" style="background:#22c55e"></span>Top 3</div>
-        <div class="legend-item"><span class="legend-dot" style="background:#f59e0b"></span>4–10</div>
-        <div class="legend-item"><span class="legend-dot" style="background:#ef4444"></span>Invisible</div>
-        <div class="legend-item"><span class="legend-dot" style="background:#f59e0b;border:2px solid #fff"></span>Your location</div>
-      </div>
-      <div class="scan-map-stats">
-        <div class="scan-stat-row"><span class="stat-dot" style="background:#22c55e"></span>Visible top-3: <strong>${sr.visibleTop3 || 0}/${sr.totalPoints || 25} spots</strong></div>
-        <div class="scan-stat-row"><span class="stat-dot" style="background:#ef4444"></span>Invisible: <strong>${sr.invisible || 0}/${sr.totalPoints || 25} (${sr.percentInvisible || 0}%)</strong></div>
-        ${comp ? `<div class="scan-stat-row"><span class="stat-dot" style="background:#888"></span>Top competitor: <strong>${comp.name}</strong> — visible at ${comp.visibleIn} of your blind spots</div>` : ''}
-        ${sr.averageRankWhereVisible ? `<div class="scan-stat-row"><span class="stat-dot" style="background:#888"></span>Your avg rank where visible: <strong>#${sr.averageRankWhereVisible}</strong></div>` : ''}
-      </div>
-      <div class="scan-map-cta">
-        <a href="${window.CALENDAR_URL || '#'}" target="_blank">Book a 10-min call to fix this →</a>
-      </div>
+      <div class="listing-check">✓</div>
     `;
-    card.id = 'inline-scan-map';
-    chatArea.insertBefore(card, document.getElementById('typing'));
-    scrollChat();
-    if (navigator.vibrate) navigator.vibrate([40, 30, 40]);
 
-    // Load Google Maps and render
-    if (lat && lng && sr.gridResults) {
-      loadGoogleMapsAndRender(lat, lng, sr.gridResults);
-    } else {
-      const msg = document.getElementById('map-loading-msg');
-      if (msg) msg.textContent = 'Map data unavailable';
-    }
-  }
-
-  function loadGoogleMapsAndRender(lat, lng, grid) {
-    if (window._gmapsLoaded) {
-      renderGoogleMap(lat, lng, grid);
-      return;
-    }
-    const key = window._mapsKey || '';
-    if (!key) {
-      const msg = document.getElementById('map-loading-msg');
-      if (msg) msg.textContent = 'Map unavailable';
-      return;
-    }
-    window._gmapsPending = { lat, lng, grid };
-    window._initScanMap = function() {
-      window._gmapsLoaded = true;
-      const p = window._gmapsPending;
-      if (p) renderGoogleMap(p.lat, p.lng, p.grid);
-    };
-    const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${key}&callback=_initScanMap&v=weekly`;
-    script.async = true;
-    script.onerror = () => {
-      const msg = document.getElementById('map-loading-msg');
-      if (msg) msg.textContent = 'Map unavailable';
-    };
-    document.head.appendChild(script);
-  }
-
-  function renderGoogleMap(lat, lng, grid) {
-    const el = document.getElementById('gmapEl');
-    const loadMsg = document.getElementById('map-loading-msg');
-    if (!el || !window.google) return;
-    if (loadMsg) loadMsg.style.display = 'none';
-
-    const darkStyle = [
-      {elementType:'geometry',stylers:[{color:'#1a1a2e'}]},
-      {elementType:'labels.text.fill',stylers:[{color:'#746855'}]},
-      {elementType:'labels.text.stroke',stylers:[{color:'#242f3e'}]},
-      {featureType:'road',elementType:'geometry',stylers:[{color:'#2c2c3e'}]},
-      {featureType:'road',elementType:'geometry.stroke',stylers:[{color:'#212a37'}]},
-      {featureType:'road',elementType:'labels.text.fill',stylers:[{color:'#9ca5b3'}]},
-      {featureType:'road.highway',elementType:'geometry',stylers:[{color:'#746855'}]},
-      {featureType:'water',elementType:'geometry',stylers:[{color:'#0e1626'}]},
-      {featureType:'water',elementType:'labels.text.fill',stylers:[{color:'#515c6d'}]},
-      {featureType:'poi',stylers:[{visibility:'off'}]},
-      {featureType:'transit',stylers:[{visibility:'off'}]}
-    ];
-
-    const map = new google.maps.Map(el, {
-      center: { lat, lng },
-      zoom: 12,
-      disableDefaultUI: true,
-      zoomControl: true,
-      zoomControlOptions: { position: google.maps.ControlPosition.RIGHT_BOTTOM },
-      gestureHandling: 'cooperative',
-      styles: darkStyle
+    div.addEventListener('click', () => {
+      document.querySelectorAll('.listing-option').forEach(el => el.classList.remove('selected'));
+      div.classList.add('selected');
+      selectedPlaceId = r.placeId;
     });
 
-    // Grid circles
-    grid.forEach(point => {
-      const rank = point.rank;
-      let fillColor = '#ef4444';
-      if (rank && rank <= 3) fillColor = '#22c55e';
-      else if (rank && rank <= 10) fillColor = '#f59e0b';
-
-      const circle = new google.maps.Circle({
-        strokeColor: 'rgba(255,255,255,0.4)',
-        strokeOpacity: 0.8,
-        strokeWeight: 1.5,
-        fillColor,
-        fillOpacity: 0.75,
-        map,
-        center: { lat: point.lat, lng: point.lng },
-        radius: 600 // meters
-      });
-
-      const infoLines = (point.topBusinesses || []).slice(0, 3).map((b, i) => `#${i + 1} ${b.name}`).join('<br>');
-      const info = new google.maps.InfoWindow({
-        content: `<div style="background:#1E1E1E;color:#fff;padding:8px 10px;border-radius:8px;font-size:12px;min-width:140px">
-          <div style="font-weight:700;color:${fillColor};margin-bottom:4px">${rank ? `Rank #${rank}` : 'Not visible'}</div>
-          ${infoLines || 'No data'}
-        </div>`
-      });
-
-      circle.addListener('click', () => {
-        info.setPosition({ lat: point.lat, lng: point.lng });
-        info.open(map);
-      });
-    });
-
-    // Practice marker — gold ring
-    new google.maps.Circle({
-      strokeColor: '#f59e0b',
-      strokeOpacity: 1,
-      strokeWeight: 3,
-      fillColor: '#f59e0b',
-      fillOpacity: 1,
-      map,
-      center: { lat, lng },
-      radius: 300,
-      zIndex: 10
-    });
-  }
-
-  function appendCalendarWidget() {
-    if (document.getElementById('cal-widget')) return;
-    fetch('/api/research/status/' + sessionId).then(r => r.json()).catch(() => ({})).then(d => {
-      const chatArea = document.getElementById('chat-area');
-      const wrap = document.createElement('div');
-      wrap.id = 'cal-widget';
-      wrap.className = 'calendar-bubble msg ai';
-
-      const calUrl = new URL('/api/calendar-placeholder', location.origin); // will be replaced by config
-      let src = '/api/calendar-url?sessionId=' + sessionId;
-      // Build real URL with pre-fill params
-      let baseUrl = window.CALENDAR_URL || '';
-      if (baseUrl) {
-        const u = new URL(baseUrl);
-        if (sessionData.name) u.searchParams.set('name', sessionData.name);
-        if (sessionData.phone) u.searchParams.set('phone', sessionData.phone);
-        src = u.toString();
-      }
-
-      wrap.innerHTML = `<p>Pick a morning slot below — your analysis will be ready for the call</p><iframe src="${src}" allowfullscreen loading="lazy"></iframe>`;
-      chatArea.insertBefore(wrap, document.getElementById('typing'));
-      scrollChat();
-    });
-  }
-
-  function showTyping() { document.getElementById('typing').style.display = 'block'; scrollChat(); }
-  function hideTyping() { document.getElementById('typing').style.display = 'none'; }
-
-  function scrollChat() {
-    const c = document.getElementById('chat-area');
-    requestAnimationFrame(() => c.scrollTop = c.scrollHeight);
-  }
-
-  // ── Progress ─────────────────────────────────────────────────────────────────
-  function updateProgress(step) {
-    const pct = PROGRESS_STEPS[step];
-    if (!pct) return;
-    const bar = document.getElementById('progress-bar');
-    bar.style.width = pct + '%';
-    setStepLabel(step);
-    bar.classList.add('pulse');
-    setTimeout(() => bar.classList.remove('pulse'), 400);
-  }
-
-  function setStepLabel(step) {
-    const label = STEP_LABELS[step] || STEP_LABELS['default'] || '';
-    const check = document.getElementById('step-check');
-    const el = document.getElementById('step-label');
-    el.firstChild.textContent = label;
-    if (step === 'complete') check.classList.add('show');
-  }
-
-  function animateResearchBar() {
-    const bar = document.getElementById('progress-bar');
-    let pct = 30;
-    const target = 40;
-    const interval = setInterval(() => {
-      pct += 0.5;
-      bar.style.width = pct + '%';
-      if (pct >= target) clearInterval(interval);
-    }, 100);
-    setStepLabel('onboarding-3');
-  }
-
-  function completeBooking() {
-    const bar = document.getElementById('progress-bar');
-    bar.style.width = '100%';
-    bar.classList.add('complete');
-    setStepLabel('complete');
-    spawnConfetti();
-  }
-
-  function spawnConfetti() {
-    for (let i = 0; i < 18; i++) {
-      setTimeout(() => {
-        const p = document.createElement('div');
-        p.className = 'confetti-piece';
-        p.style.cssText = `left:${20 + Math.random() * 60}%;top:${20 + Math.random() * 30}%;background:${['#f59e0b','#22c55e','#fff'][Math.floor(Math.random()*3)]};animation-delay:${Math.random()*0.4}s;border-radius:${Math.random()>0.5?'50%':'2px'}`;
-        document.body.appendChild(p);
-        setTimeout(() => p.remove(), 1200);
-      }, i * 40);
-    }
-  }
-
-  // ── Polling ──────────────────────────────────────────────────────────────────
-  function startResearchPolling() {
-    if (researchPolling) return;
-    researchPolling = setInterval(async () => {
-      try {
-        const r = await fetch('/api/research/status/' + sessionId);
-        const d = await r.json();
-        if (d.status === 'complete') {
-          clearInterval(researchPolling);
-          researchPolling = null;
-          document.getElementById('progress-bar').classList.add('pulse');
-        }
-      } catch {}
-    }, 3000);
-  }
-
-  function startScanPolling() {
-    if (scanPolling) return;
-    scanPolling = setInterval(async () => {
-      try {
-        const r = await fetch('/api/scan/status/' + sessionId);
-        const d = await r.json();
-        if (d.status === 'complete') {
-          clearInterval(scanPolling);
-          scanPolling = null;
-          scanDataReady = true;
-          document.getElementById('step-label').firstChild.textContent = 'Scan complete — results ready';
-          document.getElementById('progress-bar').classList.add('pulse');
-          // Only reveal the map when the conversation has reached Step 6
-          if (isStep6OrLater(currentStep)) appendScanMap();
-        }
-      } catch {}
-    }, 5000);
-  }
-
-  function handleScanReady() {
-    scanDataReady = true;
-    document.getElementById('step-label').firstChild.textContent = 'Scan complete — results ready';
-    document.getElementById('progress-bar').classList.add('pulse');
-    // Only reveal the map at Step 6 or beyond
-    if (isStep6OrLater(currentStep)) appendScanMap();
-  }
-
-  // ── Session API ──────────────────────────────────────────────────────────────
-  async function updateSession(data) {
-    try {
-      await fetch('/api/session/update', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, ...data })
-      });
-    } catch {}
-  }
-
-  // ── Ticker ───────────────────────────────────────────────────────────────────
-  function startTicker() {
-    const el = document.getElementById('ticker-text');
-    el.textContent = SOCIAL_PROOF[0];
-    setInterval(() => {
-      el.classList.add('fade');
-      setTimeout(() => {
-        tickerIdx = (tickerIdx + 1) % SOCIAL_PROOF.length;
-        el.textContent = SOCIAL_PROOF[tickerIdx];
-        el.classList.remove('fade');
-      }, 400);
-    }, 8000);
-  }
-
-  // ── Countdown ────────────────────────────────────────────────────────────────
-  function startCountdown() {
-    function update() {
-      const elapsed = Date.now() - sessionStart;
-      const remaining = Math.max(0, 24 * 3600000 - elapsed);
-      const h = Math.floor(remaining / 3600000);
-      const m = Math.floor((remaining % 3600000) / 60000);
-      const s = Math.floor((remaining % 60000) / 1000);
-      document.getElementById('countdown').textContent =
-        `Analysis expires in ${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-    }
-    update();
-    setInterval(update, 1000);
-  }
-
-  // ── Input handlers ────────────────────────────────────────────────────────────
-  const input = document.getElementById('msg-input');
-  const sendBtn = document.getElementById('send-btn');
-
-  input.addEventListener('input', function() {
-    this.style.height = 'auto';
-    this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+    listingOptions.appendChild(div);
   });
+}
 
-  input.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
+generateBtn.addEventListener('click', async () => {
+  const name = practiceInput.value.trim();
+  const city = cityInput.value.trim();
+  if (!name || !city) {
+    showError('Please enter a practice name and city.');
+    return;
+  }
+
+  hideError();
+  showLoading();
+
+  const stepResearch = document.getElementById('step-research');
+  const stepScan = document.getElementById('step-scan');
+  const stepGenerate = document.getElementById('step-generate');
+
+  stepResearch.classList.add('active');
+  const t1 = setTimeout(() => {
+    stepResearch.classList.remove('active');
+    stepResearch.classList.add('done');
+    stepScan.classList.add('active');
+  }, 10000);
+  const t2 = setTimeout(() => {
+    stepScan.classList.remove('active');
+    stepScan.classList.add('done');
+    stepGenerate.classList.add('active');
+  }, 50000);
+
+  try {
+    const resp = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ practiceName: name, city, confirmedPlaceId: selectedPlaceId || null })
+    });
+
+    clearTimeout(t1);
+    clearTimeout(t2);
+    [stepResearch, stepScan, stepGenerate].forEach(el => {
+      el.classList.remove('active');
+      el.classList.add('done');
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.error || 'Server error');
     }
+
+    const data = await resp.json();
+    showResult(data.message, data.scanUrl);
+  } catch (err) {
+    clearTimeout(t1);
+    clearTimeout(t2);
+    showForm();
+    showError(err.message || 'Something went wrong. Please try again.');
+  }
+});
+
+document.getElementById('copy-btn').addEventListener('click', () => {
+  const btn = document.getElementById('copy-btn');
+  const text = document.getElementById('message-output').value;
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = '✓ Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => {
+      btn.textContent = 'Copy to clipboard';
+      btn.classList.remove('copied');
+    }, 2000);
   });
+});
 
-  sendBtn.addEventListener('click', sendMessage);
+document.getElementById('reset-btn').addEventListener('click', () => {
+  showForm();
+  document.getElementById('message-output').value = '';
+  selectedPlaceId = null;
+  listingPicker.style.display = 'none';
+  listingOptions.innerHTML = '';
+  ['step-research', 'step-scan', 'step-generate'].forEach(id => {
+    document.getElementById(id).classList.remove('active', 'done');
+  });
+});
 
-  // Load config (calendar URL + Maps key)
-  fetch('/api/config').then(r => r.json()).then(d => {
-    if (d.calendarWidgetUrl) window.CALENDAR_URL = d.calendarWidgetUrl;
-    if (d.mapsKey) window._mapsKey = d.mapsKey;
-  }).catch(() => {});
+function showLoading() {
+  formCard.style.display = 'none';
+  loading.style.display = 'block';
+  result.style.display = 'none';
+}
 
-  // ── Boot ─────────────────────────────────────────────────────────────────────
-  init();
+function showForm() {
+  formCard.style.display = 'block';
+  loading.style.display = 'none';
+  result.style.display = 'none';
+}
 
-})();
+function showResult(message, scanUrl) {
+  loading.style.display = 'none';
+  formCard.style.display = 'none';
+  result.style.display = 'block';
+  document.getElementById('message-output').value = message;
+  const scanLink = document.getElementById('scan-link');
+  if (scanUrl) {
+    scanLink.href = scanUrl;
+    scanLink.style.display = 'flex';
+  } else {
+    scanLink.style.display = 'none';
+  }
+}
+
+function showError(msg) {
+  errorMsg.textContent = msg;
+  errorMsg.style.display = 'block';
+}
+
+function hideError() {
+  errorMsg.style.display = 'none';
+}
+
+function esc(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
 </script>
 </body>
 </html>
