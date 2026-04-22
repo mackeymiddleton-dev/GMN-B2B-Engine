@@ -480,9 +480,12 @@ function formatEnrichmentContext(enrichment) {
 
   if (enrichment.nearbyReferralSources && enrichment.nearbyReferralSources.length > 0) {
     const sourceLines = enrichment.nearbyReferralSources
-      .map(s => `- ${s.name} (${s.distKm}km away)`)
+      .map(s => {
+        const mi = Math.round((s.distKm || 0) * 0.621371 * 10) / 10;
+        return `- ${s.name} (${mi} mile${mi === 1 ? '' : 's'} away)`;
+      })
       .join('\n');
-    parts.push(`NEARBY REFERRAL SOURCES (real businesses within 2km):\n${sourceLines}`);
+    parts.push(`NEARBY REFERRAL SOURCES (ENTs, health insurers, and audiologist referral offices within ~1.2 miles — use the name and distance directly in the message):\n${sourceLines}`);
   }
 
   return parts.join('\n\n');
