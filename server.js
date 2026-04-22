@@ -422,11 +422,21 @@ async function handleInbound({ contactId, conversationId, messageBody, firstName
 function buildMessagesFromGhl(ghlMessages) {
   if (!ghlMessages || !Array.isArray(ghlMessages) || ghlMessages.length === 0) return [];
 
-  const mapped = ghlMessages
+  // GHL returns messages newest-first — reverse to chronological order for Claude
+  const chronological = [...ghlMessages].reverse();
+
+  const mapped = chronological
     .filter(m => m.body || m.message)
+    .filter(m => {
+      // Strip automated GHL system messages (CRM notifications, workflow triggers, etc.)
+      const text = (m.body || m.message || '').trim();
+      if (/CRM ID:/i.test(text)) return false;
+      if (/opportunity created/i.test(text)) return false;
+      if (/reply STOP to unsubscribe/i.test(text)) return false;
+      return true;
+    })
     .map(m => {
       // GHL direction: 1 = outbound (AI), 2 = inbound (prospect)
-      // Some versions use 'direction' field as 'inbound'/'outbound'
       const isInbound =
         m.direction === 'inbound' ||
         m.direction === 2 ||
@@ -462,6 +472,9 @@ function mergeAndNormalise(messages) {
   }
   // Claude requires messages to start with 'user'
   while (merged.length > 0 && merged[0].role !== 'user') merged.shift();
+  // Claude must respond to a user turn — strip any trailing assistant messages
+  // (e.g. GHL automation messages that appear after the prospect's last reply)
+  while (merged.length > 0 && merged[merged.length - 1].role !== 'user') merged.pop();
   return merged;
 }
 
