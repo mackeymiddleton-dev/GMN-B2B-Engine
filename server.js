@@ -1705,6 +1705,9 @@ textarea:focus{border-color:#4263eb}
   <button class="toast-dismiss" onclick="dismissToast()">Dismiss</button>
 </div>
 <div class="logo">Powered Up AI</div>
+<div style="max-width:820px;margin:0 auto 20px">
+  <a href="/admin?key=${adminKey}" style="color:#748ffc;font-size:13px;text-decoration:none">&larr; Back to Dashboard</a>
+</div>
 <div class="page-header">
   <h1>Prompt Editor</h1>
   <p class="subtitle">View and edit every AI prompt. Changes take effect immediately — no restart needed.</p>
@@ -1891,6 +1894,7 @@ tr:last-child td{border-bottom:none}
 .badge-error{background:#3b0a0a33;color:#f87171;border:1px solid #7f1d1d66}
 .empty{color:#444;font-size:13px;padding:20px 0;text-align:center}
 .warn{color:#fbbf24;font-size:13px;margin-top:10px}
+.err{color:#f87171;font-size:14px;font-weight:600;margin-top:10px;padding:12px 14px;background:#3b0a0a33;border:1px solid #7f1d1d;border-radius:8px}
 </style>
 </head>
 <body>
@@ -1925,10 +1929,13 @@ tr:last-child td{border-bottom:none}
 const ADMIN_KEY = ${JSON.stringify(adminKey)};
 let lastRows = [];
 
-function setStatus(msg, warn) {
+function setStatus(msg, level) {
+  // level: undefined/falsy = info, 'warn' = yellow, 'err' = red box
   const el = document.getElementById('status-bar');
   el.textContent = msg;
-  el.className = warn ? 'status-bar warn' : 'status-bar';
+  if (level === 'err')       el.className = 'status-bar err';
+  else if (level === 'warn') el.className = 'status-bar warn';
+  else                       el.className = 'status-bar';
 }
 
 function setBusy(busy) {
@@ -1948,7 +1955,7 @@ function renderStats(stats, dryRun) {
     <div class="stat-box"><div class="val" style="color:#f87171">\${stats.errors}</div><div class="lbl">Errors</div></div>
   \`;
   if (stats.total === 0 && stats.scanned > 0) {
-    setStatus(\`No contacts matched the tag "\${document.getElementById('tag-input').value.trim() || 'amplify'}". Check the tag name — it must match exactly (case-insensitive) the tag on your GHL contacts.\`, true);
+    setStatus(\`No contacts matched the tag "\${document.getElementById('tag-input').value.trim() || 'amplify'}". Check the tag name — it must match exactly (case-insensitive) the tag on your GHL contacts.\`, 'warn');
   }
 }
 
@@ -2019,13 +2026,13 @@ async function doPreview() {
     }
     document.getElementById('btn-run').disabled = (data.stats.total === 0);
   } catch (err) {
-    setStatus('Error: ' + err.message, true);
+    setStatus('\u2717 Error: ' + err.message, 'err');
   } finally {
     document.getElementById('btn-preview').disabled = false;
   }
 }
 
-window.addEventListener('DOMContentLoaded', () => doPreview());
+// Auto-preview removed — wait for user to click Preview button.
 
 async function doRun() {
   const tag = document.getElementById('tag-input').value.trim() || 'amplify';
@@ -2045,7 +2052,7 @@ async function doRun() {
     renderRows(data.rows, false);
     setStatus('Enrollment complete.');
   } catch (err) {
-    setStatus('Error: ' + err.message, true);
+    setStatus('\u2717 Error: ' + err.message, 'err');
   } finally {
     setBusy(false);
   }
