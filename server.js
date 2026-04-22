@@ -20,6 +20,7 @@ const { startScan } = require('./scanner');
 const brain = require('./brain');
 const followups = require('./followups');
 const prompts = require('./prompts');
+const { runEnrollment } = require('./enrollment');
 
 const app = express();
 app.use(express.json());
@@ -968,6 +969,29 @@ app.post('/admin/prompts/:name', requireAdmin, (req, res) => {
   }
 });
 
+// ─── Admin: Lead Enrollment ───────────────────────────────────────────────────
+
+app.get('/admin/enroll', (req, res) => {
+  if (!process.env.ADMIN_KEY) return res.status(503).send('ADMIN_KEY not configured');
+  const key = req.query.key || req.headers['x-admin-key'];
+  if (!key || key !== process.env.ADMIN_KEY) {
+    return res.status(401).send('Unauthorized. Add ?key=YOUR_ADMIN_KEY to the URL.');
+  }
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(buildEnrollPage(key));
+});
+
+app.post('/api/enroll/run', requireAdmin, async (req, res) => {
+  const tag    = typeof req.body.tag === 'string' && req.body.tag.trim() ? req.body.tag.trim() : 'amplify';
+  const dryRun = req.body.dryRun !== false && req.body.dryRun !== 'false';
+  try {
+    const result = await runEnrollment({ tag, dryRun, delayMs: 1500 });
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 // ─── Start Server ─────────────────────────────────────────────────────────────
 
 const PORT = process.env.PORT || 5000;
@@ -1138,7 +1162,7 @@ tr:last-child td{border-bottom:none}
 </div>
 
 <div class="panel" id="panel-brain">
-  <div class="panel-title">Brain Stats <a href="/admin/prompts?key=${adminKey}">Prompt Editor &rarr;</a></div>
+  <div class="panel-title">Brain Stats <a href="/admin/enroll?key=${adminKey}" style="margin-right:12px">Lead Enrollment &rarr;</a><a href="/admin/prompts?key=${adminKey}">Prompt Editor &rarr;</a></div>
   <div id="brain-content"><div class="loading">Loading&hellip;</div></div>
 </div>
 
@@ -1485,6 +1509,206 @@ async function resetPrompt(name) {
 }
 
 renderPrompts();
+</script>
+</body>
+</html>`;
+}
+
+// ─── Admin Enroll Page ────────────────────────────────────────────────────────
+
+function buildEnrollPage(adminKey) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lead Enrollment — Powered Up AI</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:#0f0f0f;color:#e8e8e8;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh;padding:40px 16px 80px}
+.logo{font-size:13px;font-weight:600;letter-spacing:.08em;color:#555;text-transform:uppercase;text-align:center;margin-bottom:40px}
+h1{font-size:22px;font-weight:700;color:#fff;text-align:center;margin-bottom:8px}
+.subtitle{font-size:14px;color:#666;text-align:center;margin-bottom:36px;line-height:1.5}
+.panel{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:16px;padding:28px;width:100%;max-width:1080px;margin:0 auto 24px}
+.panel-title{font-size:15px;font-weight:700;color:#fff;margin-bottom:18px;display:flex;align-items:center;gap:10px}
+.panel-title a{font-size:13px;font-weight:500;color:#748ffc;text-decoration:none;margin-left:auto}
+.controls{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:0}
+label{font-size:13px;color:#aaa}
+input[type=text]{background:#111;border:1px solid #333;border-radius:8px;color:#e8e8e8;font-size:13px;padding:8px 12px;width:160px;outline:none}
+input[type=text]:focus{border-color:#748ffc}
+button{cursor:pointer;font-size:13px;font-weight:600;padding:9px 20px;border-radius:8px;border:none;transition:opacity .15s}
+button:disabled{opacity:.45;cursor:default}
+.btn-preview{background:#2a2a2a;color:#e8e8e8}
+.btn-preview:hover:not(:disabled){background:#333}
+.btn-run{background:#4ade80;color:#0a1a0a}
+.btn-run:hover:not(:disabled){opacity:.88}
+.status-bar{font-size:13px;color:#666;margin-top:14px;min-height:20px}
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:14px;margin-bottom:0}
+.stat-box{background:#111;border:1px solid #2a2a2a;border-radius:10px;padding:14px 12px;text-align:center}
+.stat-box .val{font-size:26px;font-weight:700;color:#fff;line-height:1}
+.stat-box .lbl{font-size:11px;color:#666;margin-top:6px;text-transform:uppercase;letter-spacing:.06em}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;color:#555;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.06em;padding:0 10px 10px;border-bottom:1px solid #2a2a2a}
+td{padding:9px 10px;border-bottom:1px solid #1e1e1e;color:#ccc;vertical-align:top}
+tr:last-child td{border-bottom:none}
+.badge{display:inline-block;font-size:11px;font-weight:600;padding:2px 9px;border-radius:20px;white-space:nowrap}
+.badge-enroll{background:#14532d33;color:#4ade80;border:1px solid #14532d66}
+.badge-skip{background:#2a1a1a33;color:#888;border:1px solid #3a2a2a66}
+.badge-error{background:#3b0a0a33;color:#f87171;border:1px solid #7f1d1d66}
+.empty{color:#444;font-size:13px;padding:20px 0;text-align:center}
+.warn{color:#fbbf24;font-size:13px;margin-top:10px}
+</style>
+</head>
+<body>
+<div class="logo">Powered Up AI</div>
+<div style="text-align:center;max-width:1080px;margin:0 auto 40px">
+  <h1>Lead Enrollment</h1>
+  <p class="subtitle">Preview and enroll GHL contacts into the follow-up sequence.<br>Run a dry-run first to see what will happen, then click Run Enrollment to commit.</p>
+</div>
+
+<div class="panel">
+  <div class="panel-title">Controls <a href="/admin?key=${adminKey}">&larr; Dashboard</a></div>
+  <div class="controls">
+    <label for="tag-input">Tag</label>
+    <input type="text" id="tag-input" value="amplify" placeholder="amplify">
+    <button class="btn-preview" id="btn-preview" onclick="doPreview()">Preview (Dry Run)</button>
+    <button class="btn-run" id="btn-run" onclick="doRun()" disabled>Run Enrollment</button>
+  </div>
+  <div class="status-bar" id="status-bar"></div>
+</div>
+
+<div class="panel" id="stats-panel" style="display:none">
+  <div class="panel-title">Summary</div>
+  <div class="stat-grid" id="stat-grid"></div>
+</div>
+
+<div class="panel" id="results-panel" style="display:none">
+  <div class="panel-title" id="results-title">Results</div>
+  <div id="results-content"></div>
+</div>
+
+<script>
+const ADMIN_KEY = ${JSON.stringify(adminKey)};
+let lastRows = [];
+
+function setStatus(msg, warn) {
+  const el = document.getElementById('status-bar');
+  el.textContent = msg;
+  el.className = warn ? 'status-bar warn' : 'status-bar';
+}
+
+function setBusy(busy) {
+  document.getElementById('btn-preview').disabled = busy;
+  document.getElementById('btn-run').disabled = busy;
+}
+
+function renderStats(stats, dryRun) {
+  const panel = document.getElementById('stats-panel');
+  panel.style.display = '';
+  document.getElementById('stat-grid').innerHTML = \`
+    <div class="stat-box"><div class="val">\${stats.total}</div><div class="lbl">Found</div></div>
+    <div class="stat-box"><div class="val" style="color:#4ade80">\${stats.enrolled}</div><div class="lbl">\${dryRun ? 'Would Enroll' : 'Enrolled'}</div></div>
+    <div class="stat-box"><div class="val" style="color:#888">\${stats.skipped}</div><div class="lbl">Skipped</div></div>
+    <div class="stat-box"><div class="val" style="color:#f87171">\${stats.errors}</div><div class="lbl">Errors</div></div>
+  \`;
+}
+
+function badgeFor(action) {
+  if (action === 'ENROLL') return '<span class="badge badge-enroll">Enroll</span>';
+  if (action === 'SKIP')   return '<span class="badge badge-skip">Skip</span>';
+  return '<span class="badge badge-error">Error</span>';
+}
+
+function renderRows(rows, dryRun) {
+  const panel = document.getElementById('results-panel');
+  panel.style.display = '';
+  document.getElementById('results-title').textContent =
+    dryRun ? 'Preview — no changes written' : 'Enrollment Results';
+
+  if (!rows.length) {
+    document.getElementById('results-content').innerHTML = '<div class="empty">No contacts found.</div>';
+    return;
+  }
+
+  const rowsHtml = rows.map(r => \`
+    <tr>
+      <td>\${esc(r.firstName)}</td>
+      <td>\${esc(r.phone)}</td>
+      <td>\${esc(r.city || '—')}</td>
+      <td>\${badgeFor(r.action)}</td>
+      <td>\${r.position != null ? r.position : '—'}</td>
+      <td>\${r.step != null ? r.step : '—'}</td>
+      <td style="color:#777;font-size:12px">\${esc(r.reason || '')}</td>
+    </tr>
+  \`).join('');
+
+  document.getElementById('results-content').innerHTML = \`
+    <table>
+      <thead><tr>
+        <th>Name</th><th>Phone</th><th>City</th><th>Action</th><th>Pos</th><th>Step</th><th>Reason</th>
+      </tr></thead>
+      <tbody>\${rowsHtml}</tbody>
+    </table>
+  \`;
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+async function doPreview() {
+  const tag = document.getElementById('tag-input').value.trim() || 'amplify';
+  setBusy(true);
+  setStatus('Running dry-run preview\u2026');
+  document.getElementById('stats-panel').style.display = 'none';
+  document.getElementById('results-panel').style.display = 'none';
+  document.getElementById('btn-run').disabled = true;
+
+  try {
+    const res = await fetch('/api/enroll/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-key': ADMIN_KEY },
+      body: JSON.stringify({ tag, dryRun: true })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || res.statusText);
+    lastRows = data.rows || [];
+    renderStats(data.stats, true);
+    renderRows(data.rows, true);
+    setStatus('Dry-run complete. Review the table, then click Run Enrollment to commit.');
+    document.getElementById('btn-run').disabled = false;
+  } catch (err) {
+    setStatus('Error: ' + err.message, true);
+  } finally {
+    document.getElementById('btn-preview').disabled = false;
+  }
+}
+
+window.addEventListener('DOMContentLoaded', () => doPreview());
+
+async function doRun() {
+  const tag = document.getElementById('tag-input').value.trim() || 'amplify';
+  if (!confirm('This will write to conversations and schedule follow-up jobs. Continue?')) return;
+  setBusy(true);
+  setStatus('Running enrollment\u2026 (this may take a minute)');
+
+  try {
+    const res = await fetch('/api/enroll/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-key': ADMIN_KEY },
+      body: JSON.stringify({ tag, dryRun: false })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || res.statusText);
+    renderStats(data.stats, false);
+    renderRows(data.rows, false);
+    setStatus('Enrollment complete.');
+  } catch (err) {
+    setStatus('Error: ' + err.message, true);
+  } finally {
+    setBusy(false);
+  }
+}
 </script>
 </body>
 </html>`;
