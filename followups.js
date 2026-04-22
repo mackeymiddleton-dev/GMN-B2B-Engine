@@ -666,11 +666,23 @@ function scheduleEmailNext(contactId, sentPosition, tz) {
     daysOut = 30; nextType = 'email-nurture';
   }
 
+  const nextPosition = sentPosition + 1;
+
+  // Dedupe: skip if a pending email job for this contact+position already exists
+  const existingPending = load().some(
+    j => j.contactId === contactId && j.type.startsWith('email-') &&
+         j.position === nextPosition && j.status === 'pending'
+  );
+  if (existingPending) {
+    console.log(`[Followups] Email pos=${nextPosition} already pending for ${contactId} — skipping duplicate`);
+    return;
+  }
+
   const sendAt = nextEmailWindowMs(Date.now() + daysOut * DAY, tz || DEFAULT_TZ);
   scheduleJob({
     contactId,
     type:     nextType,
-    position: sentPosition + 1,
+    position: nextPosition,
     sendAt,
     context:  { timezone: tz || DEFAULT_TZ }
   });
@@ -787,10 +799,11 @@ async function processSilenceCheck(job) {
   if (contact.email && !hasDisableAI && !contact.booked) {
     const tz = job.context?.timezone || getContactTimezone(job.contactId);
     const emailSendAt = nextEmailWindowMs(Date.now(), tz);
-    // Avoid duplicate: skip if a pending email-hook pos=1 already exists for this contact
+    // Dedupe: skip if an email-hook pos=1 already exists (pending or already sent)
+    // This prevents a second pos1 if Email #1 sent before the silence check ran.
     const existing = load().some(
       j => j.contactId === job.contactId && j.type === 'email-hook' &&
-           j.position === 1 && j.status === 'pending'
+           j.position === 1 && (j.status === 'pending' || j.status === 'sent')
     );
     if (!existing) {
       scheduleJob({

@@ -298,13 +298,16 @@ app.post('/webhooks/ghl/enrolled', async (req, res) => {
   // Schedule 5-min silence check (triggers "Hey, you there?" SMS)
   followups.scheduleSilenceCheck(contactId, 0, '');
 
-  // Schedule Email #1 at next email window (if contact has email)
+  // Schedule Email #1 at next email window starting from 5min from now
+  // (so silence check always fires before the email window is checked)
   if (email) {
-    const emailSendAt = followups.nextEmailWindowMs(Date.now(), tz);
-    const hasPendingEmail = followups.getAllJobs('pending').some(
-      j => j.contactId === contactId && j.type === 'email-hook' && j.position === 1
+    const emailSendAt = followups.nextEmailWindowMs(Date.now() + 5 * 60 * 1000, tz);
+    const allJobs = followups.getAllJobs();
+    const hasEmail1 = allJobs.some(
+      j => j.contactId === contactId && j.type === 'email-hook' &&
+           j.position === 1 && (j.status === 'pending' || j.status === 'sent')
     );
-    if (!hasPendingEmail) {
+    if (!hasEmail1) {
       followups.scheduleJob({
         contactId,
         type:     'email-hook',
