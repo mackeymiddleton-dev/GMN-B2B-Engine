@@ -136,8 +136,9 @@ app.post('/api/generate', async (req, res) => {
   }
 
   try {
+    const model = process.env.ANTHROPIC_MODEL || 'claude-opus-4-5';
     const response = await anthropic.messages.create({
-      model: 'claude-opus-4-5',
+      model,
       max_tokens: 512,
       system: config.systemPrompt,
       messages: [{ role: 'user', content: userMessage }]

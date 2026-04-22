@@ -577,7 +577,7 @@ generateBtn.addEventListener('click', async () => {
     }
 
     const data = await resp.json();
-    showResult(data.message, data.scanUrl);
+    showResult(data.message, data.hasScan ? data.scanUrl : null);
   } catch (err) {
     clearTimeout(t1);
     clearTimeout(t2);
