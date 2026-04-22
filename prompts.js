@@ -172,4 +172,17 @@ function listAll() {
   }));
 }
 
-module.exports = { get, getDefault, set, reset, listAll };
+/**
+ * Seed prompts.json with all defaults if the file does not yet exist.
+ * Safe to call multiple times — no-ops if the file is already present.
+ * Called from server.js at startup.
+ */
+function seed() {
+  ensureDir();
+  if (!fs.existsSync(FILE)) {
+    fs.writeFileSync(FILE, JSON.stringify({}, null, 2));
+    console.log('[Prompts] data/prompts.json created (no overrides; all defaults active)');
+  }
+}
+
+module.exports = { get, getDefault, set, reset, listAll, seed };
