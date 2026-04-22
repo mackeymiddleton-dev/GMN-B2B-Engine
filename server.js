@@ -36,11 +36,11 @@ let processing = false;
 
 // ─── Step-3 Auto-Send Tracker ─────────────────────────────────────────────────
 // When PRACTICE_DETECTED fires, a pure bridge is sent and Step 3 is auto-sent
-// 45 seconds later (after the scan has had time to start). Timeouts are tracked
+// 10 seconds later so questions flow while the scan runs in the background. Timeouts are tracked
 // here so they can be cancelled if the prospect replies before the delay fires.
 const pendingStep3 = new Map(); // contactId → setTimeout handle
 
-const STEP3_DELAY_MS = 45 * 1000;
+const STEP3_DELAY_MS = 10 * 1000;
 const STEP3_TEXT = 'Now think about this — you\'ve got patients you haven\'t seen in 2+ years. Their hearing has gotten worse. Their benefits have reset. They\'re not coming back on their own. What are you doing to bring them back in before they end up at the practice down the road?';
 
 function scheduleStep3AutoSend(contactId, resolvedConvId) {
