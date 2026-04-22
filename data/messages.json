@@ -21,7 +21,11 @@
     "timestamp": 1776834667559,
     "repliedWithin48h": null,
     "repliedAt": null,
-    "booked": false
+    "booked": false,
+    "message_type": "scripted-sms",
+    "position": null,
+    "had_enrichment_data": null,
+    "length_chars": 256
   },
   {
     "id": "1776834699436-sdjheb",
@@ -45,6 +49,10 @@
     "timestamp": 1776834703101,
     "repliedWithin48h": null,
     "repliedAt": null,
-    "booked": false
+    "booked": false,
+    "message_type": "scripted-sms",
+    "position": null,
+    "had_enrichment_data": null,
+    "length_chars": 569
   }
 ]

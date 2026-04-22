@@ -702,7 +702,7 @@ async function handleInbound({ contactId, conversationId, messageBody, firstName
 
   // Inject winning patterns for the current conversation stage (learning brain)
   const currentStage = brain.classifyStage(fresh?.currentStep ?? null);
-  const winningPromptSnippet = brain.buildWinningPatternsPrompt(currentStage);
+  const winningPromptSnippet = brain.buildWinningPatternsPrompt(currentStage, 'sms_scripted');
   if (winningPromptSnippet) systemContent += winningPromptSnippet;
 
   if (fresh?.researchData) {

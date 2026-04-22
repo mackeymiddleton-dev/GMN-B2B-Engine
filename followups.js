@@ -409,7 +409,7 @@ async function generateHookMessage(contact, position, jobType, contactId) {
 
   const conversationHistory = formatConversationHistory(contact.exchanges || []);
 
-  const patterns = brain.getWinningPatterns(stage);
+  const patterns = brain.getWinningPatterns(stage, 'sms_followups');
   const winningPatterns = (patterns && patterns.length > 0)
     ? `Opening styles that have generated replies: ${patterns.slice(0, 2).map(p => `"${(p.example || '').slice(0, 80)}"`).join(' | ')}. Lean toward similar energy.`
     : '';
@@ -517,7 +517,8 @@ async function sendHook1Static(job, contact) {
     type: 'followup-hook-pos1'
   });
 
-  brain.recordOutbound(job.contactId, hookText, contact.currentStep ?? null);
+  brain.recordOutbound(job.contactId, hookText, contact.currentStep ?? null,
+    { message_type: 'followup-sms', position: 1 });
 
   const tz = job.context?.timezone || getContactTimezone(job.contactId);
   updateJob(job.id, { status: 'sent', sentAt: Date.now() });
@@ -568,7 +569,8 @@ async function sendFollowUp(job, contact, position) {
     type: `followup-${job.type}-pos${position}`
   });
 
-  brain.recordOutbound(job.contactId, hookText, freshContact.currentStep ?? null);
+  brain.recordOutbound(job.contactId, hookText, freshContact.currentStep ?? null,
+    { message_type: 'followup-sms', position });
 
   const tz = job.context?.timezone || getContactTimezone(job.contactId);
   updateJob(job.id, { status: 'sent', sentAt: Date.now() });
@@ -772,13 +774,16 @@ async function processEmailJob(job) {
   }
 
   // 7. Record exchange and schedule next
+  const emailBody = `[Email] ${emailContent.subject}: ${emailContent.body}`;
   conversations.addExchange(job.contactId, {
     direction: 'outbound',
-    body: `[Email] ${emailContent.subject}: ${emailContent.body}`,
+    body: emailBody,
     step: contact.currentStep ?? null,
     conversationId: null,
     type: `email-pos${job.position}`
   });
+  brain.recordOutbound(job.contactId, emailBody, contact.currentStep ?? null,
+    { message_type: 'email', position: job.position });
 
   updateJob(job.id, { status: 'sent', sentAt: Date.now() });
   scheduleEmailNext(job.contactId, job.position, tz);
