@@ -917,6 +917,15 @@ async function processSilenceCheck(job) {
     return;
   }
 
+  // Only ever send "Hey, you there?" once per conversation — even if there
+  // are multiple silence-check jobs queued across multiple outbound turns.
+  const alreadySentHook1 = exchanges.some(e => e.type === 'followup-hook-pos1');
+  if (alreadySentHook1) {
+    updateJob(job.id, { status: 'cancelled', error: 'Hook 1 already sent once this conversation' });
+    console.log(`[Followups] Silence check for ${job.contactId}: Hook 1 already sent — skipping repeat`);
+    return;
+  }
+
   console.log(`[Followups] Silence check for ${job.contactId}: silent — sending Hook 1 (static)`);
   await sendHook1Static(job, contact);
 
