@@ -106,7 +106,7 @@ function recordOutbound(contactId, body, step) {
     stage,
     step: step ?? null,
     timestamp: Date.now(),
-    repliedWithin48h: false,
+    repliedWithin48h: null, // null = pending; true = replied ≤48h; false = no timely reply
     repliedAt: null,
     booked: false
   });
@@ -147,11 +147,12 @@ function recordReply(contactId) {
   const messages = loadMessages();
   const now = Date.now();
 
-  // Find the most recent outbound message for this contact that hasn't been replied to
+  // Find the most recent outbound message for this contact that hasn't been replied to yet
+  // Use repliedAt === null (not repliedWithin48h) to prevent re-attributing late replies
   let lastOutboundIdx = -1;
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
-    if (m.contactId === contactId && m.direction === 'outbound' && !m.repliedWithin48h) {
+    if (m.contactId === contactId && m.direction === 'outbound' && m.repliedAt === null) {
       lastOutboundIdx = i;
       break;
     }
@@ -197,11 +198,30 @@ function recordBooking(contactId) {
  * @returns {object} The winning patterns object
  */
 function runAnalysis() {
-  const messages = loadMessages();
-  const outbound = messages.filter(m => m.direction === 'outbound');
+  let messages = loadMessages();
+  const now = Date.now();
+
+  // Settle any pending outbound messages older than 48h with no reply → mark false
+  let settled = false;
+  messages = messages.map(m => {
+    if (
+      m.direction === 'outbound' &&
+      m.repliedWithin48h === null &&
+      m.repliedAt === null &&
+      now - m.timestamp > REPLY_WINDOW_MS
+    ) {
+      settled = true;
+      return { ...m, repliedWithin48h: false };
+    }
+    return m;
+  });
+  if (settled) saveMessages(messages);
+
+  // Only count settled outbound messages (exclude null/pending) in analysis
+  const outbound = messages.filter(m => m.direction === 'outbound' && m.repliedWithin48h !== null);
 
   if (outbound.length === 0) {
-    console.log('[Brain] No outbound messages yet — skipping analysis');
+    console.log('[Brain] No settled outbound messages yet — skipping analysis');
     return {};
   }
 
