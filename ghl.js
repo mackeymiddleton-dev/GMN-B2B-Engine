@@ -1,4 +1,5 @@
 const BASE = 'https://services.leadconnectorhq.com';
+const conversations = require('./conversations');
 
 function headers() {
   return {
@@ -132,7 +133,23 @@ async function fetchContactsByTag(tag) {
   }
 }
 
+/**
+ * Send an email to a contact via GHL.
+ * Reads the contact's email address from the local record; returns null with a
+ * skip log if none is on file (check is centralized here so callers don't need
+ * to duplicate it).
+ *
+ * Auth for /webhooks/ghl/enrolled accepts either GHL_WEBHOOK_SECRET (for GHL
+ * calls) or ADMIN_KEY (as a fallback), and fails closed when neither matches.
+ */
 async function sendEmail(contactId, subject, body) {
+  // Guard: local email must be on file
+  const contact = conversations.get(contactId);
+  if (!contact?.email) {
+    console.log(`[GHL] sendEmail skipped for ${contactId} — no email on local record`);
+    return null;
+  }
+
   try {
     const payload = {
       type: 'Email',
@@ -150,7 +167,7 @@ async function sendEmail(contactId, subject, body) {
       throw new Error(`GHL email send ${res.status}: ${text}`);
     }
     const data = await res.json();
-    console.log(`[GHL] Email sent to contact ${contactId}: "${subject}"`);
+    console.log(`[GHL] Email sent to contact ${contactId} (${contact.email}): "${subject}"`);
     return data;
   } catch (err) {
     console.error('[GHL] sendEmail error:', err.message);
