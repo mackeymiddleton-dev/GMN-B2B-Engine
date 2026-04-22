@@ -183,7 +183,9 @@ async function handleInbound({ contactId, conversationId, messageBody, firstName
     conversationId
   });
 
-  // Mark the most recent outbound for this contact as replied (learning brain)
+  // Store inbound in brain (for stats and contact history) then mark previous outbound replied
+  const stepAtInbound = conversations.get(contactId)?.currentStep ?? null;
+  brain.recordInbound(contactId, messageBody, stepAtInbound);
   brain.recordReply(contactId);
 
   // Reload fresh state after recording

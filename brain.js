@@ -114,6 +114,31 @@ function recordOutbound(contactId, body, step) {
 }
 
 /**
+ * Record an inbound message from the prospect.
+ * Stored for contact history and inbound counting in stats.
+ * @param {string} contactId
+ * @param {string} body       — raw message text from prospect
+ * @param {number|null} step  — current conversation step at time of receipt
+ */
+function recordInbound(contactId, body, step) {
+  const messages = loadMessages();
+  const stage = classifyStage(step);
+  messages.push({
+    id: makeId(),
+    contactId,
+    direction: 'inbound',
+    body,
+    stage,
+    step: step ?? null,
+    timestamp: Date.now(),
+    repliedWithin48h: null,
+    repliedAt: null,
+    booked: false
+  });
+  saveMessages(messages);
+}
+
+/**
  * When an inbound message arrives, mark the most recent outbound for this
  * contact as replied (if within the 48-hour window).
  * @param {string} contactId
@@ -308,6 +333,7 @@ function startScheduledAnalysis() {
 
 module.exports = {
   classifyStage,
+  recordInbound,
   recordOutbound,
   recordReply,
   recordBooking,
