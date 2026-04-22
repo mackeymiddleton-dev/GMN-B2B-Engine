@@ -11,6 +11,7 @@ const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const Anthropic = require('@anthropic-ai/sdk');
 const path = require('path');
+const { Pool } = require('pg');
 const config = require('./config');
 const sessions = require('./sessions');
 const conversations = require('./conversations');
@@ -28,6 +29,9 @@ app.use(express.json());
 app.use(express.static('public'));
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+// Shared DB pool — used for prompt persistence (survives redeployments)
+const _promptsPool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
 
 // ─── Simple In-Memory Job Queue ───────────────────────────────────────────────
 // Ensures one webhook job processes at a time; prevents race conditions on
@@ -1291,6 +1295,10 @@ app.post('/admin/prompts/:name', requireAdmin, (req, res) => {
   if (typeof text !== 'string') return res.status(400).json({ error: 'text field required' });
   try {
     prompts.set(name, text);
+    // Also persist to DB so the save survives redeployments
+    prompts.syncToDb(_promptsPool, name, text).catch(err =>
+      console.error(`[Prompts] DB write failed for ${name}:`, err.message)
+    );
     console.log(`[Prompts] Saved ${name} (${text.length} chars)`);
     res.json({ ok: true, name, length: text.length });
   } catch (err) {
@@ -1396,6 +1404,11 @@ async function bootstrapStateFromGHL() {
 app.listen(PORT, () => {
   console.log(`Powered Up AI — GMB Message Generator running on port ${PORT}`);
   prompts.seed();
+  // Sync prompts from DB into local file on every startup — this ensures
+  // UI-saved prompts survive redeployments (DB is the durable source of truth)
+  prompts.syncFromDb(_promptsPool).catch(err =>
+    console.error('[Prompts] Startup DB sync error:', err.message)
+  );
   brain.startScheduledAnalysis();
   followups.startScheduler();
   bootstrapStateFromGHL().catch(err => console.error('[Bootstrap] Error:', err.message));

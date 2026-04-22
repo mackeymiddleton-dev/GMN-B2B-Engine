@@ -251,4 +251,70 @@ function seed() {
   }
 }
 
-module.exports = { get, getDefault, set, reset, listAll, seed };
+// ─── PostgreSQL Sync ──────────────────────────────────────────────────────────
+// Prompts are stored in data/prompts.json for fast synchronous reads.
+// The DB (ai_prompts table) is the durable source of truth — it survives
+// redeployments. On startup the server loads from DB into the file.
+// On every save the server writes to both simultaneously.
+
+/**
+ * Load all prompts from the DB and merge into the local JSON file.
+ * DB values win over file values (DB is the production source of truth).
+ * Called once on server startup.
+ * @param {import('pg').Pool} pool
+ */
+async function syncFromDb(pool) {
+  try {
+    const { rows } = await pool.query('SELECT name, value FROM ai_prompts');
+    if (rows.length === 0) {
+      // Nothing in DB yet — push current file contents up to DB
+      const stored = load();
+      for (const [name, value] of Object.entries(stored)) {
+        await pool.query(
+          'INSERT INTO ai_prompts (name, value, updated_at) VALUES ($1, $2, $3) ON CONFLICT (name) DO NOTHING',
+          [name, value, Date.now()]
+        );
+      }
+      console.log(`[Prompts] DB empty — seeded ${Object.keys(stored).length} prompts from file`);
+      return;
+    }
+    // DB has data — merge into local file (DB wins)
+    const stored = load();
+    let changed = 0;
+    for (const row of rows) {
+      if (stored[row.name] !== row.value) {
+        stored[row.name] = row.value;
+        changed++;
+      }
+    }
+    if (changed > 0) {
+      save(stored);
+      console.log(`[Prompts] Synced ${changed} prompt(s) from DB into local file`);
+    } else {
+      console.log(`[Prompts] DB sync complete — ${rows.length} prompt(s) already up to date`);
+    }
+  } catch (err) {
+    console.error('[Prompts] DB sync error:', err.message, '— continuing with local file');
+  }
+}
+
+/**
+ * Write a single prompt to the DB after it has been saved to the local file.
+ * Called from the POST /admin/prompts/:name route.
+ * @param {import('pg').Pool} pool
+ * @param {string} name
+ * @param {string} value
+ */
+async function syncToDb(pool, name, value) {
+  try {
+    await pool.query(
+      'INSERT INTO ai_prompts (name, value, updated_at) VALUES ($1, $2, $3) ON CONFLICT (name) DO UPDATE SET value=$2, updated_at=$3',
+      [name, value, Date.now()]
+    );
+    console.log(`[Prompts] Saved "${name}" to DB (${value.length} chars)`);
+  } catch (err) {
+    console.error(`[Prompts] DB write error for "${name}":`, err.message);
+  }
+}
+
+module.exports = { get, getDefault, set, reset, listAll, seed, syncFromDb, syncToDb };
