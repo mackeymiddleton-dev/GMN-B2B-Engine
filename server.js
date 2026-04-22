@@ -1734,7 +1734,7 @@ textarea:focus{border-color:#4263eb}
   <h1>Prompt Editor</h1>
   <p class="subtitle">View and edit every AI prompt. Changes take effect immediately — no restart needed.</p>
   <div style="display:inline-block;margin-top:12px;padding:6px 14px;background:#1e3a8a;color:#93c5fd;font-size:12px;font-weight:700;border-radius:20px;letter-spacing:.04em">
-    BUILD v3 · LOADED ${new Date().toISOString().replace('T',' ').slice(0,19)} UTC
+    BUILD v4 (click-fix) · LOADED ${new Date().toISOString().replace('T',' ').slice(0,19)} UTC
   </div>
 </div>
 <div id="prompts"></div>
@@ -1768,13 +1768,16 @@ function renderPrompts() {
       <div class="prompt-desc">\${escapeHtml(p.description)}</div>
       <textarea id="ta-\${p.name}" rows="14" spellcheck="false">\${escapeHtml(p.current)}</textarea>
       <div class="actions">
-        <button class="btn btn-save" id="save-\${p.name}" onclick="savePrompt(\${JSON.stringify(p.name)})">Save</button>
-        <button class="btn btn-reset" id="reset-\${p.name}" onclick="resetPrompt(\${JSON.stringify(p.name)})" \${p.isModified ? '' : 'disabled'}>Reset to default</button>
+        <button class="btn btn-save" id="save-\${p.name}" data-name="\${p.name}">Save</button>
+        <button class="btn btn-reset" id="reset-\${p.name}" data-name="\${p.name}" \${p.isModified ? '' : 'disabled'}>Reset to default</button>
         <span class="status" id="status-\${p.name}"></span>
         <span class="char-count" id="chars-\${p.name}">\${p.current.length} chars</span>
       </div>
     \`;
     container.appendChild(card);
+    // Bind via addEventListener to avoid HTML attribute escaping issues with quotes in prompt names.
+    document.getElementById('save-' + p.name).addEventListener('click', () => savePrompt(p.name));
+    document.getElementById('reset-' + p.name).addEventListener('click', () => resetPrompt(p.name));
     const ta = document.getElementById('ta-' + p.name);
     ta.addEventListener('input', () => {
       document.getElementById('chars-' + p.name).textContent = ta.value.length + ' chars';
@@ -1813,6 +1816,8 @@ async function savePrompt(name) {
   const resetBtn = document.getElementById('reset-' + name);
   const statusEl = document.getElementById('status-' + name);
   const label = ALL_PROMPTS.find(x => x.name === name)?.label || name;
+  // Show modal IMMEDIATELY so user knows the click registered.
+  showModal('Saving\u2026', 'Sending "' + label + '" to the server. This box will update when the save completes.', false);
   saveBtn.disabled = true;
   statusEl.textContent = 'Saving\u2026';
   statusEl.className = 'status';
@@ -1939,7 +1944,7 @@ tr:last-child td{border-bottom:none}
   <h1>Lead Enrollment</h1>
   <p class="subtitle">Preview and enroll GHL contacts into the follow-up sequence.<br>Run a dry-run first to see what will happen, then click Run Enrollment to commit.</p>
   <div style="display:inline-block;margin-top:12px;padding:6px 14px;background:#1e3a8a;color:#93c5fd;font-size:12px;font-weight:700;border-radius:20px;letter-spacing:.04em">
-    BUILD v3 · LOADED ${new Date().toISOString().replace('T',' ').slice(0,19)} UTC
+    BUILD v4 (click-fix) · LOADED ${new Date().toISOString().replace('T',' ').slice(0,19)} UTC
   </div>
 </div>
 
