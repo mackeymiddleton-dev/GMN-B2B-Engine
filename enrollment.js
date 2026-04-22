@@ -52,6 +52,9 @@ function isRealMessage(m) {
   if (/CRM ID:/i.test(text)) return false;
   if (/opportunity created/i.test(text)) return false;
   if (/reply STOP to unsubscribe/i.test(text)) return false;
+  // Exclude outbound messages that failed to deliver — don't count them as
+  // sent steps when analysing how far a conversation progressed.
+  if (m.status === 'failed' && !isInbound(m)) return false;
   return true;
 }
 

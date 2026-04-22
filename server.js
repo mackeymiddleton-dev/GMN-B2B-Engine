@@ -936,6 +936,11 @@ function buildMessagesFromGhl(ghlMessages) {
   const mapped = chronological
     .filter(m => m.body || m.message)
     .filter(m => {
+      // Drop outbound messages that GHL/Twilio failed to deliver — Claude should
+      // not treat them as received by the prospect.
+      const outbound = m.direction === 'outbound' || m.direction === 1 ||
+                       m.messageType === 'outbound' || m.type === 1;
+      if (outbound && m.status === 'failed') return false;
       // Strip automated GHL system messages (CRM notifications, workflow triggers, etc.)
       const text = (m.body || m.message || '').trim();
       if (/CRM ID:/i.test(text)) return false;
