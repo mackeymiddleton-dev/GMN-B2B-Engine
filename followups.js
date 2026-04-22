@@ -96,7 +96,7 @@ const SILENCE_CHECK_MS = 5 * 60 * 1000; // 5 minutes
 const MORNING_START = 7;  // 7am
 const MORNING_END = 8;    // 8am
 const EVENING_START = 16; // 4pm
-const EVENING_END = 20;   // 8pm
+const EVENING_END = 21;   // 8pm inclusive (window: 4pm–8pm, check is h < EVENING_END)
 
 // ─── Cadence Constants ────────────────────────────────────────────────────────
 
