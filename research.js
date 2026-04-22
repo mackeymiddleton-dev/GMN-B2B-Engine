@@ -416,4 +416,21 @@ function ordinal(n) {
   return s[(v - 20) % 10] || s[v] || s[0];
 }
 
-module.exports = { runResearch, fetchCompetitorVelocity, findReferralSources, refreshRecentReviews };
+/**
+ * Fetch the current total review count for a single placeId.
+ * Used to track the prospect's own review velocity between follow-ups.
+ */
+async function fetchReviewCount(placeId, apiKey) {
+  if (!apiKey || !placeId) return null;
+  try {
+    const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=user_ratings_total&key=${apiKey}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    return data.result?.user_ratings_total ?? null;
+  } catch (err) {
+    console.log(`[Research] fetchReviewCount failed for ${placeId}:`, err.message);
+    return null;
+  }
+}
+
+module.exports = { runResearch, fetchCompetitorVelocity, findReferralSources, refreshRecentReviews, fetchReviewCount };

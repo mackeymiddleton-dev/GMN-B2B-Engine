@@ -8,7 +8,7 @@ const prompts = require('./prompts');
 const conversations = require('./conversations');
 const ghl = require('./ghl');
 const brain = require('./brain');
-const { fetchCompetitorVelocity, findReferralSources, refreshRecentReviews } = require('./research');
+const { fetchCompetitorVelocity, findReferralSources, refreshRecentReviews, fetchReviewCount } = require('./research');
 
 const _pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
 
@@ -401,20 +401,38 @@ async function fetchEnrichments(contactId, researchData) {
     }
   }
 
-  // 2. Competitor velocity — always re-fetched to get a fresh diff
+  // 2. Competitor velocity + prospect's own review gain — always re-fetched fresh
   try {
     const delta = await fetchCompetitorVelocity(researchData, apiKey);
     if (delta) {
       enrichment.competitorVelocityDelta = delta;
       console.log(`[Followups] Competitor velocity for ${contactId}: "${delta}"`);
     }
-    // Persist if baseline counts were updated (even when no positive delta)
     if (researchData._competitorBaselineUpdated) {
       needsPersist = true;
       delete researchData._competitorBaselineUpdated;
     }
   } catch (err) {
     console.log(`[Followups] Competitor velocity fetch error for ${contactId}:`, err.message);
+  }
+
+  // 2b. Prospect's own review velocity — needed for Template 6 ("You added [N]")
+  //     Re-fetch their current total and diff against the baseline stored in researchData.reviews
+  if (researchData.placeId && typeof researchData.reviews === 'number') {
+    try {
+      const currentCount = await fetchReviewCount(researchData.placeId, apiKey);
+      if (currentCount !== null) {
+        const gained = Math.max(0, currentCount - researchData.reviews);
+        enrichment.prospectReviewGain = gained;
+        if (currentCount !== researchData.reviews) {
+          researchData.reviews = currentCount;
+          needsPersist = true;
+        }
+        console.log(`[Followups] Prospect review gain for ${contactId}: +${gained} (now ${currentCount})`);
+      }
+    } catch (err) {
+      console.log(`[Followups] Prospect review count error for ${contactId}:`, err.message);
+    }
   }
 
   // 3. Referral sources — fetch once; re-fetch if empty (e.g. pre-existing contacts)
@@ -454,7 +472,10 @@ function formatEnrichmentContext(enrichment) {
   }
 
   if (enrichment.competitorVelocityDelta) {
-    parts.push(`COMPETITOR REVIEW VELOCITY (fresh as of now):\n- ${enrichment.competitorVelocityDelta}`);
+    const prospectGain = typeof enrichment.prospectReviewGain === 'number'
+      ? ` (prospect gained ${enrichment.prospectReviewGain} in the same period)`
+      : '';
+    parts.push(`COMPETITOR REVIEW VELOCITY (fresh as of now):\n- ${enrichment.competitorVelocityDelta}${prospectGain}`);
   }
 
   if (enrichment.nearbyReferralSources && enrichment.nearbyReferralSources.length > 0) {
