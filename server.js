@@ -52,12 +52,13 @@ async function drainQueue() {
 
 // ─── GHL Webhook Auth ─────────────────────────────────────────────────────────
 
-function verifyGhlWebhook(req) {
+function verifyGhlWebhook(req, res) {
   const secret = process.env.GHL_WEBHOOK_SECRET;
   if (!secret) {
-    // No secret configured — log a warning but allow through for initial setup
-    console.warn('[Webhook] GHL_WEBHOOK_SECRET not set — running without verification');
-    return true;
+    // Fail-closed: if no secret is configured the endpoint is not ready for production
+    console.error('[Webhook] GHL_WEBHOOK_SECRET is not set — rejecting request');
+    res.status(503).json({ error: 'Webhook not configured — set GHL_WEBHOOK_SECRET' });
+    return false;
   }
   // GHL can be configured to send the secret in several headers; support all common forms
   const provided =
@@ -68,23 +69,42 @@ function verifyGhlWebhook(req) {
     '';
   if (provided === secret) return true;
   console.warn('[Webhook] Auth failed — received key does not match GHL_WEBHOOK_SECRET');
+  res.status(401).json({ error: 'Unauthorized' });
   return false;
 }
 
 // ─── GHL Inbound Webhook ──────────────────────────────────────────────────────
 
 app.post('/webhooks/ghl/inbound', async (req, res) => {
-  // Verify the request is from GHL
-  if (!verifyGhlWebhook(req)) {
-    return res.status(401).json({ error: 'Unauthorized' });
+  // Verify the request is from GHL (fail-closed — 401/503 sent by verifyGhlWebhook)
+  if (!verifyGhlWebhook(req, res)) return;
+
+  const payload = req.body;
+
+  // ── Direction / event-type guard ──────────────────────────────────────────────
+  // Only process true inbound messages from prospects.
+  // GHL may also fire webhooks for outbound messages or other events; skip those
+  // to prevent loops and double-processing.
+  const direction =
+    payload.direction ||
+    payload.messageDirection ||
+    payload.type; // some versions send type: 1 (outbound) / 2 (inbound)
+
+  const isOutbound =
+    direction === 'outbound' ||
+    direction === 'sent' ||
+    direction === 1 ||
+    direction === '1';
+
+  if (isOutbound) {
+    console.log('[Webhook] Skipping outbound message to prevent loop');
+    return res.json({ received: true, skipped: 'outbound' });
   }
 
   // Acknowledge immediately — GHL expects a fast 200
   res.json({ received: true });
 
-  const payload = req.body;
-
-  // Handle multiple GHL webhook payload shapes
+  // ── Parse payload (multiple GHL webhook shapes) ───────────────────────────────
   const contactId =
     payload.contactId ||
     payload.contact_id ||
@@ -93,7 +113,8 @@ app.post('/webhooks/ghl/inbound', async (req, res) => {
   const conversationId =
     payload.conversationId ||
     payload.conversation_id ||
-    payload.conversation?.id;
+    payload.conversation?.id ||
+    null;
 
   const messageBody = (
     payload.body ||
@@ -170,10 +191,21 @@ async function handleInbound({ contactId, conversationId, messageBody, firstName
   }
 
   // ── 4. Build message history from GHL + local ─────────────────────────────────
+  // Resolve conversationId if not present in webhook payload (e.g. some GHL event types)
+  let resolvedConvId = conversationId;
+  if (!resolvedConvId && contactId) {
+    try {
+      resolvedConvId = await ghl.getOrCreateConversation(contactId);
+      console.log(`[Webhook] Resolved conversationId ${resolvedConvId} for contact ${contactId}`);
+    } catch (err) {
+      console.warn('[Webhook] Could not resolve conversationId:', err.message);
+    }
+  }
+
   // Fetch full conversation from GHL (authoritative source)
   let messages = [];
-  if (conversationId) {
-    const ghlMessages = await ghl.fetchMessages(conversationId);
+  if (resolvedConvId) {
+    const ghlMessages = await ghl.fetchMessages(resolvedConvId);
     messages = buildMessagesFromGhl(ghlMessages);
   }
 
@@ -296,7 +328,7 @@ async function handleInbound({ contactId, conversationId, messageBody, firstName
       direction: 'outbound',
       body: reply,
       step: detectedStep,
-      conversationId
+      conversationId: resolvedConvId || null
     });
     console.log(`[Webhook] Sent to ${contactId} (step ${detectedStep}): "${reply.slice(0, 80)}"`);
   }
