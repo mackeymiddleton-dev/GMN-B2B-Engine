@@ -504,7 +504,17 @@ async function handleConfirmationReply(contactId, messageBody, contact, resolved
     return;
   }
 
-  // Any non-no response (yes/yeah/correct/right/etc.) is treated as confirmation
+  // Require explicit affirmative — ambiguous replies re-prompt so Step 3 stays held
+  const isYes = /^(yes|yeah|yep|yup|correct|right|that('s| is)( it| right| the one)?|sure|exactly|affirmative|ok(ay)?|y)\b/.test(msg);
+  if (!isYes) {
+    const reprompt = "Just want to make sure — is that your practice listing? Reply yes or no.";
+    await ghl.sendMessage(contactId, reprompt);
+    conversations.addExchange(contactId, { direction: 'outbound', body: reprompt, step: 3, conversationId: resolvedConvId || null });
+    brain.recordOutbound(contactId, reprompt, 3);
+    followups.scheduleSilenceCheck(contactId, 3, reprompt);
+    return;
+  }
+
   conversations.update(contactId, { confirmationPending: null });
   console.log(`[Webhook] Practice confirmed for ${contactId}: ${pending.name}`);
   startResearchAndScan(contactId, pending.name, contact.practiceStreet || '', pending.city, pending.placeId);
@@ -528,7 +538,7 @@ async function handleRetryName(contactId, messageBody, contact, resolvedConvId) 
       const topResult = (placesData.results || [])[0];
 
       if (topResult) {
-        const confirmName = topResult.name || newName;
+        const confirmName = topResult.name || retryInput;
         const confirmAddress = topResult.formatted_address || '';
         conversations.update(contactId, {
           confirmationPending: { placeId: topResult.place_id, name: confirmName, address: confirmAddress, city }
@@ -547,7 +557,7 @@ async function handleRetryName(contactId, messageBody, contact, resolvedConvId) 
   }
 
   // No result or no API key — proceed without confirmation
-  startResearchAndScan(contactId, newName, '', city, null);
+  startResearchAndScan(contactId, retryInput, '', city, null);
   scheduleStep3AutoSend(contactId, resolvedConvId);
 }
 
