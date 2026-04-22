@@ -346,27 +346,9 @@ app.post('/webhooks/ghl/inbound', async (req, res) => {
 // (and first email-hook) immediately — without waiting for them to reply.
 
 app.post('/webhooks/ghl/enrolled', async (req, res) => {
-  // Fail-closed auth: accept if GHL_WEBHOOK_SECRET matches, OR if ADMIN_KEY is provided.
-  // Unlike the inbound webhook, this endpoint never runs in "open mode" — if neither
-  // credential is configured/provided, the request is rejected.
-  const adminKey = process.env.ADMIN_KEY;
-  const providedKey =
-    req.headers['x-admin-key'] ||
-    req.query.key ||
-    req.headers['x-ghl-signature'] ||
-    req.headers['x-api-key'] ||
-    req.headers['authorization']?.replace(/^Bearer\s+/i, '') ||
-    req.query.token ||
-    '';
-
-  const secret = process.env.GHL_WEBHOOK_SECRET;
-  const secretOk  = secret  && providedKey === secret;
-  const adminOk   = adminKey && providedKey === adminKey;
-
-  if (!secretOk && !adminOk) {
-    console.warn('[Enrolled] Auth failed — missing or invalid credentials');
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+  // Use the same auth logic as /inbound: open mode when GHL_WEBHOOK_SECRET is not set,
+  // strict match when it is. ADMIN_KEY is not used here — that's for the admin UI only.
+  if (!verifyGhlWebhook(req, res)) return;
 
   res.json({ received: true });
 
@@ -473,24 +455,9 @@ app.post('/webhooks/ghl/enrolled', async (req, res) => {
 // also updated with the latest tags.
 
 app.post('/webhooks/ghl/contact-updated', async (req, res) => {
-  const adminKey = process.env.ADMIN_KEY;
-  const providedKey =
-    req.headers['x-admin-key'] ||
-    req.query.key ||
-    req.headers['x-ghl-signature'] ||
-    req.headers['x-api-key'] ||
-    req.headers['authorization']?.replace(/^Bearer\s+/i, '') ||
-    req.query.token ||
-    '';
-
-  const secret = process.env.GHL_WEBHOOK_SECRET;
-  const secretOk = secret  && providedKey === secret;
-  const adminOk  = adminKey && providedKey === adminKey;
-
-  if (!secretOk && !adminOk) {
-    console.warn('[ContactUpdated] Auth failed — missing or invalid credentials');
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+  // Use the same auth logic as /inbound: open mode when GHL_WEBHOOK_SECRET is not set,
+  // strict match when it is. ADMIN_KEY is not used here — that's for the admin UI only.
+  if (!verifyGhlWebhook(req, res)) return;
 
   res.json({ received: true });
 
