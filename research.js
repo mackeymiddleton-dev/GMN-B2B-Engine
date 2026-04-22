@@ -110,7 +110,17 @@ async function getCensusData(city) {
   }
 }
 
-async function runResearch(session, practiceName, city, confirmedPlaceId = null) {
+// Distance between two lat/lng points in kilometres (Haversine formula)
+function haversineKm(lat1, lng1, lat2, lng2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+async function runResearch(session, practiceName, practiceStreet, city, confirmedPlaceId = null) {
   const sessions = require('./sessions');
   const apiKey = process.env.GOOGLE_PLACES_KEY;
 
@@ -125,14 +135,14 @@ async function runResearch(session, practiceName, city, confirmedPlaceId = null)
       photos: 4,
       websiteListed: true,
       hoursSet: true,
-      address: `${city}`,
+      address: [practiceStreet, city].filter(Boolean).join(', ') || city,
       lat: 37.7749,
       lng: -122.4194,
       placeId: null,
       competitors: [
-        { name: 'Clear Hearing Center', reviews: 187, rating: 4.8, placeId: null },
-        { name: 'Bay Audiology', reviews: 92, rating: 4.7, placeId: null },
-        { name: 'Advanced Hearing Solutions', reviews: 71, rating: 4.5, placeId: null }
+        { name: 'Clear Hearing Center', reviews: 187, rating: 4.8, placeId: null, distKm: 0.8 },
+        { name: 'Bay Audiology', reviews: 92, rating: 4.7, placeId: null, distKm: 1.4 },
+        { name: 'Advanced Hearing Solutions', reviews: 71, rating: 4.5, placeId: null, distKm: 2.1 }
       ],
       competitorSummary: `${practiceName} is ranked 4th out of 7 practices by review count`,
       prospectRank: 4,
@@ -160,7 +170,6 @@ async function runResearch(session, practiceName, city, confirmedPlaceId = null)
         return;
       }
       usedPlaceId = confirmedPlaceId;
-      // Build a normalised `place` object from the details response
       place = {
         place_id: confirmedPlaceId,
         name: details.name,
@@ -170,9 +179,10 @@ async function runResearch(session, practiceName, city, confirmedPlaceId = null)
         geometry: details.geometry
       };
     } else {
-      // Fuzzy text search fallback
+      // Text search — include street when available for more precise matching
+      const searchQuery = [practiceName, practiceStreet, city].filter(Boolean).join(' ');
       const [placeResults, pop65_] = await Promise.all([
-        searchPlaces(`${practiceName} ${city}`, apiKey),
+        searchPlaces(searchQuery, apiKey),
         getCensusData(city)
       ]);
       pop65 = pop65_;
@@ -190,7 +200,7 @@ async function runResearch(session, practiceName, city, confirmedPlaceId = null)
     const lat = place.geometry?.location?.lat;
     const lng = place.geometry?.location?.lng;
 
-    // Competitor search
+    // Competitor search — radius stays at ~5 miles but closest strong performers surface first
     const compResults = await searchPlaces(
       config.competitorKeyword,
       apiKey,
@@ -200,8 +210,24 @@ async function runResearch(session, practiceName, city, confirmedPlaceId = null)
 
     const competitors = compResults
       .filter(p => !p.name.toLowerCase().includes(practiceName.toLowerCase().split(' ')[0].toLowerCase()))
-      .map(p => ({ name: p.name, reviews: p.user_ratings_total || 0, rating: p.rating || 0, placeId: p.place_id }))
-      .sort((a, b) => b.reviews - a.reviews)
+      .map(p => {
+        const cLat = p.geometry?.location?.lat || lat;
+        const cLng = p.geometry?.location?.lng || lng;
+        const distKm = haversineKm(lat, lng, cLat, cLng);
+        return {
+          name: p.name,
+          reviews: p.user_ratings_total || 0,
+          rating: p.rating || 0,
+          placeId: p.place_id,
+          distKm: Math.round(distKm * 10) / 10
+        };
+      })
+      .sort((a, b) => {
+        // Proximity-weighted score: closest strong performers bubble to the top
+        const scoreA = a.reviews / (1 + a.distKm / 2);
+        const scoreB = b.reviews / (1 + b.distKm / 2);
+        return scoreB - scoreA;
+      })
       .slice(0, 5);
 
     const allByReviews = [

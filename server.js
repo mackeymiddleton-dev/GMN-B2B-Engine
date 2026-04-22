@@ -272,6 +272,14 @@ async function handleInbound({ contactId, conversationId, messageBody, firstName
     }
   }
 
+  // ── 4.5. Handle address confirmation or name-retry states (no Claude call) ────
+  if (fresh?.confirmationPending) {
+    return await handleConfirmationReply(contactId, messageBody, fresh, resolvedConvId);
+  }
+  if (fresh?.awaitingRetryName) {
+    return await handleRetryName(contactId, messageBody, fresh, resolvedConvId);
+  }
+
   // Fetch full conversation from GHL (authoritative source)
   let messages = [];
   if (resolvedConvId) {
@@ -294,6 +302,10 @@ async function handleInbound({ contactId, conversationId, messageBody, firstName
 
   if (resolvedFirstName || fresh?.firstName) {
     systemContent += `\n\nPROSPECT FIRST NAME: ${resolvedFirstName || fresh?.firstName}`;
+  }
+
+  if (resolvedCity || fresh?.city) {
+    systemContent += `\n\nPROSPECT CITY: ${resolvedCity || fresh?.city}`;
   }
 
   if (fresh?.currentStep !== undefined) {
@@ -346,45 +358,50 @@ async function handleInbound({ contactId, conversationId, messageBody, firstName
   const detectedStep = stepMatch ? parseInt(stepMatch[1], 10) : null;
   reply = reply.replace(/\[STEP:\d+\]\s*/gi, '').trim();
 
-  // [PRACTICE_DETECTED:name] — trigger GMB research + schedule Step 3 auto-send
+  // [PRACTICE_DETECTED:name|street|city] — fast lookup → address confirmation → research
   const practiceMatch = reply.match(/\[PRACTICE_DETECTED:([^\]]+)\]/i);
+  let confirmationMsg = null;
   if (practiceMatch) {
-    const practiceName = practiceMatch[1].trim();
+    const parts = practiceMatch[1].split('|').map(s => s.trim());
+    const practiceName = parts[0] || '';
+    const practiceStreet = parts[1] || '';
+    const practiceCity = parts[2] || resolvedCity || fresh?.city || '';
+
     reply = reply.replace(/\[PRACTICE_DETECTED:[^\]]+\]\s*/i, '').trim();
-    const contactCity = resolvedCity || fresh?.city || '';
-    conversations.update(contactId, { practiceName });
-    console.log(`[Webhook] Practice detected: "${practiceName}" in "${contactCity}"`);
+    conversations.update(contactId, { practiceName, practiceStreet, practiceCity });
+    console.log(`[Webhook] Practice detected: "${practiceName}" on "${practiceStreet}" in "${practiceCity}"`);
 
-    if (practiceName && contactCity) {
-      const sessionObj = { sessionId: contactId };
-      sessions.set(contactId, {
-        sessionId: contactId,
-        practiceName,
-        city: contactCity,
-        researchStatus: 'idle',
-        scanStatus: 'idle',
-        researchData: null,
-        scanResults: null,
-        createdAt: Date.now()
-      });
-      runResearch(sessionObj, practiceName, contactCity, null).then(() => {
-        const s = sessions.get(contactId);
-        if (s?.researchData) {
-          conversations.update(contactId, { researchData: s.researchData });
-          console.log(`[Webhook] Research stored for ${contactId}`);
+    const apiKey = process.env.GOOGLE_PLACES_KEY;
+    if (apiKey && practiceName) {
+      try {
+        const searchQuery = [practiceName, practiceStreet, practiceCity].filter(Boolean).join(' ');
+        const placesUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(searchQuery)}&key=${apiKey}`;
+        const placesRes = await fetch(placesUrl);
+        const placesData = await placesRes.json();
+        const topResult = (placesData.results || [])[0];
+
+        if (topResult) {
+          const confirmName = topResult.name || practiceName;
+          const confirmAddress = topResult.formatted_address || topResult.vicinity || '';
+          conversations.update(contactId, {
+            confirmationPending: { placeId: topResult.place_id, name: confirmName, address: confirmAddress, city: practiceCity }
+          });
+          confirmationMsg = `Found ${confirmName} at ${confirmAddress} — is that the right one?`;
+          console.log(`[Webhook] Address confirmation queued for ${contactId}: ${confirmName}`);
+        } else {
+          console.log(`[Webhook] No listing found for "${searchQuery}" — skipping confirmation`);
+          startResearchAndScan(contactId, practiceName, practiceStreet, practiceCity, null);
+          scheduleStep3AutoSend(contactId, resolvedConvId);
         }
-      }).catch(() => {});
-      startScan(sessionObj, practiceName, contactCity, config.scanKeyword).then(() => {
-        const s = sessions.get(contactId);
-        if (s?.scanResults) {
-          conversations.update(contactId, { scanResults: s.scanResults });
-          console.log(`[Webhook] Scan stored for ${contactId}`);
-        }
-      }).catch(() => {});
+      } catch (err) {
+        console.error('[Webhook] Fast lookup error:', err.message);
+        startResearchAndScan(contactId, practiceName, practiceStreet, practiceCity, null);
+        scheduleStep3AutoSend(contactId, resolvedConvId);
+      }
+    } else {
+      startResearchAndScan(contactId, practiceName, practiceStreet, practiceCity, null);
+      scheduleStep3AutoSend(contactId, resolvedConvId);
     }
-
-    // Bridge sent — schedule Step 3 question to fire in 45 seconds
-    scheduleStep3AutoSend(contactId, resolvedConvId);
   }
 
   // [BOOKED] — mark contact as booked
@@ -409,12 +426,127 @@ async function handleInbound({ contactId, conversationId, messageBody, firstName
       step: detectedStep,
       conversationId: resolvedConvId || null
     });
-    // Record in learning brain (stage derived from detectedStep)
     brain.recordOutbound(contactId, reply, detectedStep);
-    // Schedule a 5-min silence check — if they don't reply, Hook 1 fires automatically
     followups.scheduleSilenceCheck(contactId, detectedStep, reply);
     console.log(`[Webhook] Sent to ${contactId} (step ${detectedStep}): "${reply.slice(0, 80)}"`);
   }
+
+  // ── 9. Send address confirmation (if queued from PRACTICE_DETECTED) ───────────
+  if (confirmationMsg) {
+    try {
+      await ghl.sendMessage(contactId, confirmationMsg);
+      conversations.addExchange(contactId, {
+        direction: 'outbound',
+        body: confirmationMsg,
+        step: 3,
+        conversationId: resolvedConvId || null
+      });
+      brain.recordOutbound(contactId, confirmationMsg, 3);
+      followups.scheduleSilenceCheck(contactId, 3, confirmationMsg);
+      console.log(`[Webhook] Sent address confirmation to ${contactId}: "${confirmationMsg.slice(0, 80)}"`);
+    } catch (err) {
+      console.error('[Webhook] Failed to send confirmation — falling back to auto Step 3:', err.message);
+      const ct = conversations.get(contactId);
+      if (ct?.confirmationPending) {
+        conversations.update(contactId, { confirmationPending: null });
+        startResearchAndScan(contactId, ct.practiceName, ct.practiceStreet || '', ct.practiceCity || ct.city || '', null);
+        scheduleStep3AutoSend(contactId, resolvedConvId);
+      }
+    }
+  }
+}
+
+// ─── Address Confirmation Helpers ─────────────────────────────────────────────
+
+function startResearchAndScan(contactId, practiceName, practiceStreet, city, confirmedPlaceId) {
+  const sessionObj = { sessionId: contactId };
+  sessions.set(contactId, {
+    sessionId: contactId,
+    practiceName,
+    practiceStreet: practiceStreet || '',
+    city,
+    researchStatus: 'idle',
+    scanStatus: 'idle',
+    researchData: null,
+    scanResults: null,
+    createdAt: Date.now()
+  });
+  runResearch(sessionObj, practiceName, practiceStreet || '', city, confirmedPlaceId).then(() => {
+    const s = sessions.get(contactId);
+    if (s?.researchData) {
+      conversations.update(contactId, { researchData: s.researchData });
+      console.log(`[Webhook] Research stored for ${contactId}`);
+    }
+  }).catch(() => {});
+  startScan(sessionObj, practiceName, city, config.scanKeyword).then(() => {
+    const s = sessions.get(contactId);
+    if (s?.scanResults) {
+      conversations.update(contactId, { scanResults: s.scanResults });
+      console.log(`[Webhook] Scan stored for ${contactId}`);
+    }
+  }).catch(() => {});
+}
+
+async function handleConfirmationReply(contactId, messageBody, contact, resolvedConvId) {
+  const pending = contact.confirmationPending;
+  const msg = messageBody.toLowerCase().trim();
+
+  const isNo = /^(no|nope|not (quite|right|that one|it)|wrong|different|nah|incorrect)\b/.test(msg) || msg === 'n';
+
+  if (isNo) {
+    conversations.update(contactId, { confirmationPending: null, awaitingRetryName: true });
+    const clarification = "No problem — what's the name exactly as it appears on Google Maps?";
+    await ghl.sendMessage(contactId, clarification);
+    conversations.addExchange(contactId, { direction: 'outbound', body: clarification, step: 3, conversationId: resolvedConvId || null });
+    brain.recordOutbound(contactId, clarification, 3);
+    followups.scheduleSilenceCheck(contactId, 3, clarification);
+    console.log(`[Webhook] Confirmation denied for ${contactId} — asking for correction`);
+    return;
+  }
+
+  // Any non-no response (yes/yeah/correct/right/etc.) is treated as confirmation
+  conversations.update(contactId, { confirmationPending: null });
+  console.log(`[Webhook] Practice confirmed for ${contactId}: ${pending.name}`);
+  startResearchAndScan(contactId, pending.name, contact.practiceStreet || '', pending.city, pending.placeId);
+  scheduleStep3AutoSend(contactId, resolvedConvId);
+}
+
+async function handleRetryName(contactId, messageBody, contact, resolvedConvId) {
+  const city = contact.practiceCity || contact.city || '';
+  const newName = messageBody.trim();
+  conversations.update(contactId, { awaitingRetryName: false, practiceName: newName });
+
+  const apiKey = process.env.GOOGLE_PLACES_KEY;
+  if (apiKey) {
+    try {
+      const searchQuery = [newName, city].filter(Boolean).join(' ');
+      const placesUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(searchQuery)}&key=${apiKey}`;
+      const placesRes = await fetch(placesUrl);
+      const placesData = await placesRes.json();
+      const topResult = (placesData.results || [])[0];
+
+      if (topResult) {
+        const confirmName = topResult.name || newName;
+        const confirmAddress = topResult.formatted_address || '';
+        conversations.update(contactId, {
+          confirmationPending: { placeId: topResult.place_id, name: confirmName, address: confirmAddress, city }
+        });
+        const confirmMsg = `Found ${confirmName} at ${confirmAddress} — is that the right one?`;
+        await ghl.sendMessage(contactId, confirmMsg);
+        conversations.addExchange(contactId, { direction: 'outbound', body: confirmMsg, step: 3, conversationId: resolvedConvId || null });
+        brain.recordOutbound(contactId, confirmMsg, 3);
+        followups.scheduleSilenceCheck(contactId, 3, confirmMsg);
+        console.log(`[Webhook] Retry confirmation sent to ${contactId}: ${confirmName}`);
+        return;
+      }
+    } catch (err) {
+      console.error('[Webhook] Retry lookup error:', err.message);
+    }
+  }
+
+  // No result or no API key — proceed without confirmation
+  startResearchAndScan(contactId, newName, '', city, null);
+  scheduleStep3AutoSend(contactId, resolvedConvId);
 }
 
 // ─── Message History Builders ─────────────────────────────────────────────────
@@ -536,7 +668,7 @@ app.post('/api/generate', async (req, res) => {
   };
   sessions.set(sessionId, session);
 
-  runResearch(session, practiceName, city, confirmedPlaceId || null).catch(() => {});
+  runResearch(session, practiceName, '', city, confirmedPlaceId || null).catch(() => {});
   startScan(session, practiceName, city, config.scanKeyword).catch(() => {});
 
   const TIMEOUT = 90000;
