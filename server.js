@@ -1228,6 +1228,7 @@ app.get('/admin/prompts', (req, res) => {
   }
   const all = prompts.listAll();
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store');
   res.send(buildPromptEditorPage(key, all));
 });
 
@@ -1244,11 +1245,14 @@ app.post('/admin/prompts/:name/reset', requireAdmin, (req, res) => {
 app.post('/admin/prompts/:name', requireAdmin, (req, res) => {
   const { name } = req.params;
   const { text } = req.body;
+  console.log(`[Prompts] Save request — name=${name}, textLength=${typeof text === 'string' ? text.length : 'missing'}`);
   if (typeof text !== 'string') return res.status(400).json({ error: 'text field required' });
   try {
     prompts.set(name, text);
+    console.log(`[Prompts] Saved ${name} (${text.length} chars)`);
     res.json({ ok: true, name, length: text.length });
   } catch (err) {
+    console.error(`[Prompts] Save failed for ${name}:`, err.message);
     res.status(400).json({ error: err.message });
   }
 });
@@ -1704,6 +1708,7 @@ textarea:focus{border-color:#4263eb}
 <div class="page-header">
   <h1>Prompt Editor</h1>
   <p class="subtitle">View and edit every AI prompt. Changes take effect immediately — no restart needed.</p>
+  <p style="font-size:11px;color:#444;margin-top:8px">Page loaded: ${new Date().toLocaleString()}</p>
 </div>
 <div id="prompts"></div>
 
@@ -1766,6 +1771,7 @@ function dismissToast() {
 }
 
 async function savePrompt(name) {
+  console.log('[Prompts] savePrompt called for:', name);
   const ta = document.getElementById('ta-' + name);
   const saveBtn = document.getElementById('save-' + name);
   const resetBtn = document.getElementById('reset-' + name);
