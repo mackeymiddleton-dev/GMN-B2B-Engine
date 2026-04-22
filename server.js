@@ -17,6 +17,7 @@ const conversations = require('./conversations');
 const ghl = require('./ghl');
 const { runResearch } = require('./research');
 const { startScan } = require('./scanner');
+const brain = require('./brain');
 
 const app = express();
 app.use(express.json());
@@ -182,6 +183,9 @@ async function handleInbound({ contactId, conversationId, messageBody, firstName
     conversationId
   });
 
+  // Mark the most recent outbound for this contact as replied (learning brain)
+  brain.recordReply(contactId);
+
   // Reload fresh state after recording
   const fresh = conversations.get(contactId);
 
@@ -219,7 +223,7 @@ async function handleInbound({ contactId, conversationId, messageBody, firstName
     return;
   }
 
-  // ── 5. Build system prompt with live data ─────────────────────────────────────
+  // ── 5. Build system prompt with live data + winning patterns ─────────────────
   let systemContent = config.conversationPrompt;
 
   if (resolvedFirstName || fresh?.firstName) {
@@ -229,6 +233,11 @@ async function handleInbound({ contactId, conversationId, messageBody, firstName
   if (fresh?.currentStep !== undefined) {
     systemContent += `\n\nCURRENT STEP: ${fresh.currentStep} (continue from here)`;
   }
+
+  // Inject winning patterns for the current conversation stage (learning brain)
+  const currentStage = brain.classifyStage(fresh?.currentStep ?? null);
+  const winningPromptSnippet = brain.buildWinningPatternsPrompt(currentStage);
+  if (winningPromptSnippet) systemContent += winningPromptSnippet;
 
   if (fresh?.researchData) {
     const rd = fresh.researchData;
@@ -313,6 +322,7 @@ async function handleInbound({ contactId, conversationId, messageBody, firstName
   if (reply.includes('[BOOKED]')) {
     reply = reply.replace(/\[BOOKED\]\s*/gi, '').trim();
     conversations.update(contactId, { booked: true });
+    brain.recordBooking(contactId);
     console.log(`[Webhook] Contact ${contactId} booked!`);
   }
 
@@ -330,6 +340,8 @@ async function handleInbound({ contactId, conversationId, messageBody, firstName
       step: detectedStep,
       conversationId: resolvedConvId || null
     });
+    // Record in learning brain (stage derived from detectedStep)
+    brain.recordOutbound(contactId, reply, detectedStep);
     console.log(`[Webhook] Sent to ${contactId} (step ${detectedStep}): "${reply.slice(0, 80)}"`);
   }
 }
@@ -579,11 +591,23 @@ app.get('/api/contacts/:contactId', requireAdmin, (req, res) => {
   res.json(c);
 });
 
+// ─── Admin: Learning Brain ────────────────────────────────────────────────────
+
+app.get('/api/brain/stats', requireAdmin, (req, res) => {
+  res.json(brain.getStats());
+});
+
+app.post('/api/brain/analyze', requireAdmin, (req, res) => {
+  const result = brain.runAnalysis();
+  res.json({ ok: true, patterns: result });
+});
+
 // ─── Start Server ─────────────────────────────────────────────────────────────
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Powered Up AI — GMB Message Generator running on port ${PORT}`);
+  brain.startScheduledAnalysis();
 });
 
 // ─── Scan Page Builder ────────────────────────────────────────────────────────
