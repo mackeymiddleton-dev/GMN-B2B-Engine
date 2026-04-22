@@ -1720,9 +1720,19 @@ textarea:focus{border-color:#4263eb}
 .status-err{color:#ef4444}
 .char-count{font-size:12px;color:#555;margin-left:auto}
 .page-header{text-align:center;max-width:820px;margin:0 auto 40px}
+.toast-bar{position:fixed;top:0;left:0;right:0;z-index:9999;padding:14px 24px;font-size:14px;font-weight:600;text-align:center;display:none;align-items:center;justify-content:center;gap:16px}
+.toast-bar.toast-ok{background:#14532d;color:#4ade80;border-bottom:1px solid #166534}
+.toast-bar.toast-err{background:#450a0a;color:#f87171;border-bottom:1px solid #7f1d1d}
+.toast-dismiss{background:transparent;border:1px solid currentColor;border-radius:6px;color:inherit;cursor:pointer;font-size:12px;padding:3px 10px;opacity:.7}
+.toast-dismiss:hover{opacity:1}
+.last-saved{font-size:11px;color:#3b5bdb;margin-left:8px}
 </style>
 </head>
 <body>
+<div class="toast-bar" id="toast-bar" role="alert">
+  <span id="toast-msg"></span>
+  <button class="toast-dismiss" onclick="dismissToast()">Dismiss</button>
+</div>
 <div class="logo">Powered Up AI</div>
 <div class="page-header">
   <h1>Prompt Editor</h1>
@@ -1773,11 +1783,27 @@ function renderPrompts() {
   });
 }
 
+let _toastTimer = null;
+function showToast(msg, isError) {
+  const bar = document.getElementById('toast-bar');
+  document.getElementById('toast-msg').textContent = msg;
+  bar.className = 'toast-bar ' + (isError ? 'toast-err' : 'toast-ok');
+  bar.style.display = 'flex';
+  clearTimeout(_toastTimer);
+  if (!isError) {
+    _toastTimer = setTimeout(dismissToast, 6000);
+  }
+}
+function dismissToast() {
+  document.getElementById('toast-bar').style.display = 'none';
+}
+
 async function savePrompt(name) {
   const ta = document.getElementById('ta-' + name);
   const saveBtn = document.getElementById('save-' + name);
   const resetBtn = document.getElementById('reset-' + name);
   const statusEl = document.getElementById('status-' + name);
+  const label = ALL_PROMPTS.find(x => x.name === name)?.label || name;
   saveBtn.disabled = true;
   statusEl.textContent = 'Saving\u2026';
   statusEl.className = 'status';
@@ -1789,7 +1815,8 @@ async function savePrompt(name) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || res.statusText);
-    statusEl.textContent = 'Saved';
+    const timeStr = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+    statusEl.innerHTML = '\u2713 Saved <span class="last-saved">at ' + timeStr + '</span>';
     statusEl.className = 'status status-ok';
     const p = ALL_PROMPTS.find(x => x.name === name);
     if (p) { p.current = ta.value; p.isModified = true; }
@@ -1797,17 +1824,19 @@ async function savePrompt(name) {
     document.getElementById('badge-' + name).className = 'badge badge-modified';
     document.getElementById('card-' + name).className = 'prompt-card modified';
     resetBtn.disabled = false;
-    setTimeout(() => { statusEl.textContent = ''; }, 3000);
+    showToast('\u2713 "' + label + '" saved successfully at ' + timeStr, false);
   } catch(err) {
-    statusEl.textContent = 'Error: ' + err.message;
+    statusEl.textContent = '\u2717 Error: ' + err.message;
     statusEl.className = 'status status-err';
+    showToast('\u2717 Failed to save "' + label + '": ' + err.message, true);
   } finally {
     saveBtn.disabled = false;
   }
 }
 
 async function resetPrompt(name) {
-  if (!confirm('Reset "' + name + '" to its hardcoded default? This will discard your edits.')) return;
+  const label = ALL_PROMPTS.find(x => x.name === name)?.label || name;
+  if (!confirm('Reset "' + label + '" to its hardcoded default? This will discard your edits.')) return;
   const resetBtn = document.getElementById('reset-' + name);
   const statusEl = document.getElementById('status-' + name);
   resetBtn.disabled = true;
@@ -1830,11 +1859,13 @@ async function resetPrompt(name) {
     document.getElementById('badge-' + name).textContent = 'Default';
     document.getElementById('badge-' + name).className = 'badge badge-default';
     document.getElementById('card-' + name).className = 'prompt-card';
-    setTimeout(() => { statusEl.textContent = ''; }, 3000);
+    showToast('\u2713 "' + label + '" reset to default', false);
+    setTimeout(() => { statusEl.textContent = ''; }, 4000);
   } catch(err) {
-    statusEl.textContent = 'Error: ' + err.message;
+    statusEl.textContent = '\u2717 Error: ' + err.message;
     statusEl.className = 'status status-err';
     resetBtn.disabled = false;
+    showToast('\u2717 Failed to reset "' + label + '": ' + err.message, true);
   }
 }
 
