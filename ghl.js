@@ -90,33 +90,42 @@ async function getOrCreateConversation(contactId) {
   }
 }
 
-async function fetchContactsByTag(tag, maxResults = Infinity) {
-  const contacts = [];
-  let page = 1;
+async function fetchContactsByTag(tag) {
+  const tagLower = tag.toLowerCase();
+  const matched = [];
   const limit = 100;
+  let startAfterId = null;
 
   try {
-    while (contacts.length < maxResults) {
+    // GHL doesn't support server-side tag filtering on the contacts list endpoint.
+    // We paginate through all contacts using cursor-based pagination and filter locally.
+    while (true) {
       const params = new URLSearchParams({
         locationId: process.env.GHL_LOCATION_ID || '',
-        limit: String(limit),
-        page: String(page)
+        limit: String(limit)
       });
-      params.append('tags[]', tag);
+      if (startAfterId) params.set('startAfterId', startAfterId);
 
       const res = await fetch(`${BASE}/contacts/?${params.toString()}`, { headers: headers() });
       if (!res.ok) throw new Error(`GHL contacts fetch ${res.status}`);
       const data = await res.json();
 
       const batch = data.contacts || [];
-      contacts.push(...batch);
 
-      // Stop if we got fewer than a full page (last page)
+      for (const c of batch) {
+        const contactTags = (c.tags || []).map(t =>
+          (typeof t === 'string' ? t : (t.name || t.tag || '')).toLowerCase()
+        );
+        if (contactTags.includes(tagLower)) matched.push(c);
+      }
+
+      // GHL cursor: use the last contact's id as startAfterId for the next page
       if (batch.length < limit) break;
-      page++;
+      startAfterId = batch[batch.length - 1].id;
     }
-    console.log(`[GHL] fetchContactsByTag("${tag}"): found ${contacts.length} contact(s)`);
-    return contacts;
+
+    console.log(`[GHL] fetchContactsByTag("${tag}"): found ${matched.length} matching contact(s)`);
+    return matched;
   } catch (err) {
     console.error('[GHL] fetchContactsByTag error:', err.message);
     return [];
