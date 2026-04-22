@@ -200,8 +200,12 @@ Rules:
  */
 function heuristicAnalysis(ghlMessages) {
   const real        = (ghlMessages || []).filter(isRealMessage);
-  const outbounds   = real.filter(m => !isInbound(m));
-  const inbounds    = real.filter(m =>  isInbound(m));
+  // Sort newest-first so [0] reliably points to the most recent message
+  const sorted      = [...real].sort((a, b) => {
+    return parseDate(b.dateAdded || b.createdAt) - parseDate(a.dateAdded || a.createdAt);
+  });
+  const outbounds   = sorted.filter(m => !isInbound(m));
+  const inbounds    = sorted.filter(m =>  isInbound(m));
   const outboundCount = outbounds.length;
   const inboundCount  = inbounds.length;
 
@@ -291,6 +295,19 @@ async function main() {
   console.log(`  Delay: ${DELAY_MS}ms between contacts`);
   console.log('══════════════════════════════════════════════════════\n');
 
+  // 0. Validate required env vars before making any GHL calls
+  const missingEnv = [];
+  if (!process.env.GHL_API_KEY)     missingEnv.push('GHL_API_KEY');
+  if (!process.env.GHL_LOCATION_ID) missingEnv.push('GHL_LOCATION_ID');
+  if (missingEnv.length) {
+    console.error(`ERROR: Missing required environment variable(s): ${missingEnv.join(', ')}`);
+    console.error('Set them in your shell before running this script.');
+    process.exit(1);
+  }
+  if (!DRY_RUN && !process.env.ANTHROPIC_API_KEY) {
+    console.warn('WARNING: ANTHROPIC_API_KEY not set — Claude analysis will be skipped for mid-conversation leads.\n');
+  }
+
   // 1. Fetch ALL contacts with the tag (no cap — paginate until exhausted)
   console.log(`Fetching contacts tagged "${TAG}" from GHL...`);
   const ghlContacts = await ghl.fetchContactsByTag(TAG);
@@ -378,8 +395,14 @@ async function main() {
 
       const tz = estimateTimezone(city);
       const DAY = 24 * 60 * 60 * 1000;
-      const baseDelay = Math.max(0, analysis.enrollPosition - 2) * DAY;
-      const sendAt = nextWindowMs(Date.now() + baseDelay, tz);
+      // Position → intended re-entry cadence:
+      //   2 = warm / soon (today's next window)
+      //   3 = semi-warm (2 days out)
+      //   4 = moderately cold (4 days out)
+      //   5 = cold / longer arc (7 days out)
+      const POSITION_DELAY = { 2: 0, 3: 2, 4: 4, 5: 7 };
+      const daysOut = POSITION_DELAY[analysis.enrollPosition] ?? (analysis.enrollPosition - 2);
+      const sendAt = nextWindowMs(Date.now() + daysOut * DAY, tz);
 
       row.position = analysis.enrollPosition;
       row.step     = analysis.currentStep;
