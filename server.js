@@ -1414,6 +1414,33 @@ app.post('/admin/prompts/:name', requireAdmin, (req, res) => {
   }
 });
 
+// ─── Admin: Variant Backfill ──────────────────────────────────────────────────
+
+app.post('/api/admin/backfill-variants', requireAdmin, (req, res) => {
+  const all = conversations.getAll();
+  const unassigned = Object.entries(all).filter(([, c]) => !c.variant);
+  if (unassigned.length === 0) return res.json({ ok: true, assigned: 0, message: 'All contacts already have variants' });
+
+  const variants = ['A', 'B', 'C'];
+  // Count current assignments to continue the round-robin fairly
+  const counts = { A: 0, B: 0, C: 0 };
+  for (const c of Object.values(all)) {
+    if (c.variant && counts[c.variant] !== undefined) counts[c.variant]++;
+  }
+
+  let assigned = 0;
+  for (const [contactId] of unassigned) {
+    // Always pick the variant with the fewest contacts
+    const next = variants.slice().sort((a, b) => counts[a] - counts[b])[0];
+    conversations.update(contactId, { variant: next });
+    counts[next]++;
+    assigned++;
+  }
+
+  console.log(`[Variants] Backfilled ${assigned} contacts. Distribution: A=${counts.A} B=${counts.B} C=${counts.C}`);
+  res.json({ ok: true, assigned, distribution: counts });
+});
+
 // ─── Admin: Variant Enable/Disable ────────────────────────────────────────────
 
 app.post('/admin/variants/:variant/enabled', requireAdmin, (req, res) => {
@@ -1580,7 +1607,28 @@ app.listen(PORT, () => {
   }).catch(err => console.error('[Prompts] Startup DB sync error:', err.message));
   brain.startScheduledAnalysis();
   followups.startScheduler();
-  bootstrapStateFromGHL().catch(err => console.error('[Bootstrap] Error:', err.message));
+  bootstrapStateFromGHL()
+    .then(() => {
+      // Backfill variant assignments for any contacts that don't have one yet.
+      // Safe to run on every startup — only touches contacts with a null variant.
+      const all = conversations.getAll();
+      const unassigned = Object.entries(all).filter(([, c]) => !c.variant);
+      if (unassigned.length === 0) {
+        console.log('[Variants] All contacts already have a variant assigned');
+        return;
+      }
+      const counts = { A: 0, B: 0, C: 0 };
+      for (const c of Object.values(all)) {
+        if (c.variant && counts[c.variant] !== undefined) counts[c.variant]++;
+      }
+      for (const [contactId] of unassigned) {
+        const next = ['A', 'B', 'C'].slice().sort((a, b) => counts[a] - counts[b])[0];
+        conversations.update(contactId, { variant: next });
+        counts[next]++;
+      }
+      console.log(`[Variants] Backfilled ${unassigned.length} contacts — A:${counts.A} B:${counts.B} C:${counts.C}`);
+    })
+    .catch(err => console.error('[Bootstrap] Error:', err.message));
 });
 
 // ─── Scan Page Builder ────────────────────────────────────────────────────────
