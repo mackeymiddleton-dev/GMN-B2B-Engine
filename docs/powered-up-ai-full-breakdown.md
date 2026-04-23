@@ -1,6 +1,6 @@
 # Powered Up AI — Complete System Breakdown
 
-**Purpose of this document:** A thorough, code-verified account of exactly what this system does — including every AI prompt word-for-word — written so that someone with no prior exposure can read it and understand how everything fits together, and so that another AI can analyze it and make recommendations on effectiveness and profitability.
+**Purpose of this document:** A thorough, code-verified account of exactly what this system does — including every AI prompt word-for-word — written so that someone with no prior exposure can read it and understand how everything fits together,and so that another AI can analyze it and make recommendations on effectiveness and profitability.
 
 ---
 

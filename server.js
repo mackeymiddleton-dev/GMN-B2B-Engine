@@ -1290,52 +1290,61 @@ app.get('/api/followups/:contactId', requireAdmin, (req, res) => {
 // multiple times — the dedup guard in /enrolled already prevents duplicates.
 
 app.post('/api/admin/rebuild-queue', requireAdmin, async (req, res) => {
-  const allContacts = conversations.getAll();
+  const allContacts  = conversations.getAll();
   const pendingJobs  = followups.getAllJobs('pending');
-  const pendingSet   = new Set(pendingJobs.map(j => j.contactId));
 
-  const results = { scheduled: [], skipped: [] };
+  // Separate sets for SMS and email so each track is deduped independently
+  const pendingSmsSet   = new Set(pendingJobs.filter(j => !j.type.startsWith('email-')).map(j => j.contactId));
+  const pendingEmailSet = new Set(pendingJobs.filter(j =>  j.type.startsWith('email-')).map(j => j.contactId));
+
+  const results = { scheduledSms: [], scheduledEmail: [], skipped: [] };
 
   for (const contact of Object.values(allContacts)) {
-    const { contactId, firstName, booked, currentStep, exchanges = [] } = contact;
+    const { contactId, firstName, booked, exchanges = [] } = contact;
 
-    // Skip: booked, opted-out, or already has pending jobs
     if (booked) { results.skipped.push({ contactId, firstName, reason: 'booked' }); continue; }
-    if (pendingSet.has(contactId)) { results.skipped.push({ contactId, firstName, reason: 'has_pending_job' }); continue; }
     if (await optouts.isOptedOut(contactId)) { results.skipped.push({ contactId, firstName, reason: 'opted_out' }); continue; }
 
     const outbound = exchanges.filter(e => e.direction === 'outbound');
     const inbound  = exchanges.filter(e => e.direction === 'inbound');
+    const tz       = followups.estimateTimezone(contact.city || '');
+    const ctx      = { timezone: tz, firstName, city: contact.city || '', phone: contact.phone || '' };
+    const DAY      = 24 * 60 * 60 * 1000;
 
-    // Skip: never received any outbound message (nothing to follow up on yet)
-    if (outbound.length === 0) { results.skipped.push({ contactId, firstName, reason: 'no_outbound' }); continue; }
+    // ── SMS track ────────────────────────────────────────────────────────────
+    if (outbound.length > 0 && !pendingSmsSet.has(contactId)) {
+      if (inbound.length === 0) {
+        // Never replied — hook 1 at next window
+        const sendAt = followups.nextWindowMs(Date.now(), tz);
+        followups.scheduleJob({ contactId, type: 'hook', position: 1, sendAt, context: ctx });
+        results.scheduledSms.push({ contactId, firstName, sendAt: new Date(sendAt).toISOString() });
+      } else {
+        // Has replied — nurture in 3 days
+        const sendAt = followups.nextWindowMs(Date.now() + 3 * DAY, tz);
+        followups.scheduleJob({ contactId, type: 'nurture', position: 2, sendAt, context: ctx });
+        results.scheduledSms.push({ contactId, firstName, sendAt: new Date(sendAt).toISOString() });
+      }
+      pendingSmsSet.add(contactId);
+    }
 
-    const tz = followups.estimateTimezone(contact.city || '');
-
-    if (inbound.length === 0) {
-      // Never replied — schedule hook 1 at next available send window (today/tomorrow)
-      const sendAt = followups.nextWindowMs(Date.now(), tz);
+    // ── Email track ──────────────────────────────────────────────────────────
+    if (contact.email && outbound.length > 0 && !pendingEmailSet.has(contactId)) {
+      const sendAt = followups.nextEmailWindowMs(Date.now() + 5 * 60 * 1000, tz);
       followups.scheduleJob({
-        contactId, type: 'hook', position: 1, sendAt,
-        context: { timezone: tz, firstName, city: contact.city || '', phone: contact.phone || '' }
+        contactId, type: 'email-hook', position: 1, sendAt,
+        context: { ...ctx, email: contact.email }
       });
-      results.scheduled.push({ contactId, firstName, replied: false, sendAt: new Date(sendAt).toISOString() });
-    } else {
-      // Has replied but queue was lost — schedule a nurture a few days out so
-      // they aren't flooded; the AI will tailor the message to their history.
-      const DAY = 24 * 60 * 60 * 1000;
-      const sendAt = followups.nextWindowMs(Date.now() + 3 * DAY, tz);
-      followups.scheduleJob({
-        contactId, type: 'nurture', position: 2, sendAt,
-        context: { timezone: tz, firstName, city: contact.city || '', phone: contact.phone || '' }
-      });
-      results.scheduled.push({ contactId, firstName, replied: true, sendAt: new Date(sendAt).toISOString() });
+      results.scheduledEmail.push({ contactId, firstName, email: contact.email, sendAt: new Date(sendAt).toISOString() });
+      pendingEmailSet.add(contactId);
     }
   }
 
-  console.log(`[RebuildQueue] Scheduled ${results.scheduled.length}, skipped ${results.skipped.length}`);
+  const total = results.scheduledSms.length + results.scheduledEmail.length;
+  console.log(`[RebuildQueue] SMS: ${results.scheduledSms.length}, Email: ${results.scheduledEmail.length}, Skipped: ${results.skipped.length}`);
   res.json({
-    scheduled: results.scheduled.length,
+    scheduledSms:   results.scheduledSms.length,
+    scheduledEmail: results.scheduledEmail.length,
+    total,
     skipped: results.skipped.length,
     detail: results
   });
@@ -1994,8 +2003,8 @@ async function rebuildQueue() {
   try {
     const res = await fetch('/api/admin/rebuild-queue', { method: 'POST', headers: { 'x-admin-key': ADMIN_KEY } });
     const data = await res.json();
-    status.textContent = 'Done — scheduled ' + data.scheduled + ' job(s), skipped ' + data.skipped;
-    if (data.scheduled > 0) loadFollowups();
+    status.textContent = 'Done — ' + data.scheduledSms + ' SMS + ' + data.scheduledEmail + ' email job(s) scheduled, ' + data.skipped + ' skipped';
+    if (data.total > 0) loadFollowups();
   } catch (err) {
     status.textContent = 'Error: ' + err.message;
   } finally {
