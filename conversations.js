@@ -198,7 +198,7 @@ function addExchange(contactId, exchange) {
   _dbUpsertContact(_cache[contactId]);
 }
 
-// Kick off DB load immediately
-initFromDb();
+// Kick off DB load immediately — store the promise so callers can await readiness
+const _initPromise = initFromDb();
 
-module.exports = { get, set, update, getAll, ensureContact, addExchange, initFromDb };
+module.exports = { get, set, update, getAll, ensureContact, addExchange, initFromDb, whenReady: () => _initPromise };

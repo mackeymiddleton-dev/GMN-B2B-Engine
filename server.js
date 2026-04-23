@@ -1607,7 +1607,7 @@ app.listen(PORT, () => {
   }).catch(err => console.error('[Prompts] Startup DB sync error:', err.message));
   brain.startScheduledAnalysis();
   followups.startScheduler();
-  bootstrapStateFromGHL()
+  Promise.all([bootstrapStateFromGHL(), conversations.whenReady()])
     .then(() => {
       // Backfill variant assignments for any contacts that don't have one yet.
       // Safe to run on every startup — only touches contacts with a null variant.
