@@ -159,22 +159,16 @@ function heuristicAnalysis(ghlMessages) {
 
   const allText = real.map(m => (m.body || m.message || '').toLowerCase()).join(' ');
   const usedCurrentScript =
-    allText.includes('percentage actually went through') ||
-    allText.includes('insurance benefits reset') ||
-    allText.includes('benefits have reset') ||
-    allText.includes("haven't seen in 2+");
+    allText.includes('showing up on that map') ||
+    allText.includes('percentage actually went through with it');
 
   let detectedStep = 0;
-  if (allText.includes("haven't seen in 2+") || allText.includes('bring them back in')) {
-    detectedStep = 3;
-  } else if (allText.includes('i pulled up') && allText.includes('while we were talking')) {
+  if (allText.includes('sid, our founder')) {
     detectedStep = 4;
-  } else if (allText.includes('lot not being captured') || (allText.includes('expiring') && allText.includes('dormant'))) {
-    detectedStep = 7;
-  } else if (allText.includes('sid, our founder')) {
-    detectedStep = 8;
-  } else if (allText.includes('insurance benefits') || allText.includes('benefits reset') || allText.includes('percentage')) {
-    detectedStep = 2;
+  } else if (allText.includes('i pulled up') || allText.includes('percentage actually went through')) {
+    detectedStep = 3;
+  } else if (allText.includes('showing up on that map')) {
+    detectedStep = 1;
   } else if (outboundCount > 0) {
     detectedStep = 1;
   }
