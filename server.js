@@ -1764,7 +1764,7 @@ a{color:#818cf8;text-decoration:none}a:hover{text-decoration:underline}
 .stat-highlight .val{color:#818cf8}
 
 /* ── Panel ── */
-.panel{background:#131316;border:1px solid #1f1f1f;border-radius:16px;padding:24px;width:100%;max-width:980px;margin:0 auto 20px;overflow:hidden}
+.panel{background:#131316;border:1px solid #1f1f1f;border-radius:16px;padding:24px;width:100%;max-width:980px;margin:0 auto 20px}
 .panel-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px;gap:12px;flex-wrap:wrap}
 .panel-title{font-size:15px;font-weight:700;color:#fff}
 .panel-desc{font-size:12px;color:#444;margin-bottom:18px;line-height:1.5}
@@ -1825,6 +1825,35 @@ tr:hover td{background:#18181c}
 @keyframes pulse{0%,100%{opacity:.4}50%{opacity:1}}
 .dot-live{display:inline-block;width:7px;height:7px;border-radius:50%;background:#22c55e;margin-right:6px;animation:livepulse 2s infinite}
 @keyframes livepulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* ── Table scroll wrapper ── */
+.table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+
+/* ── Mobile ── */
+@media(max-width:640px){
+  body{padding:12px 10px 60px}
+  .header{margin-bottom:14px;gap:8px}
+  .header-left h1{font-size:16px}
+  .header-right{width:100%}
+  .header-right .btn{flex:1;text-align:center;font-size:11px;padding:7px 8px}
+  .refresh-bar{font-size:10px;margin-bottom:12px}
+  .stats-strip{grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}
+  .stat-card{padding:10px 6px;border-radius:10px}
+  .stat-card .val{font-size:20px}
+  .stat-card .lbl{font-size:10px}
+  .stat-card .sub{display:none}
+  .panel{padding:14px 12px;border-radius:12px;margin-bottom:14px}
+  .panel-desc{font-size:11px;margin-bottom:12px}
+  .legend{display:none}
+  .tab-row{gap:4px;margin-bottom:12px}
+  .tab{font-size:11px;padding:4px 10px}
+  table{font-size:12px}
+  th{font-size:10px;padding:0 8px 8px;letter-spacing:0}
+  td{padding:8px 8px}
+  .badge{font-size:10px;padding:2px 7px}
+  .queue-summary{gap:12px}
+  .qs-item{font-size:12px}
+}
 </style>
 </head>
 <body>
@@ -2017,11 +2046,11 @@ function renderQueue() {
   }
 
   if (currentTab === 'pending') {
-    el.innerHTML = \`<table>
+    el.innerHTML = \`<div class="table-wrap"><table>
       <thead><tr>
         <th>Contact</th>
         <th>Channel</th>
-        <th>Sequence Stage</th>
+        <th>Stage</th>
         <th>Sends At</th>
       </tr></thead>
       <tbody>\${filtered.map(j => {
@@ -2039,13 +2068,13 @@ function renderQueue() {
           </td>
         </tr>\`;
       }).join('')}</tbody>
-    </table>\`;
+    </table></div>\`;
   } else {
-    el.innerHTML = \`<table>
+    el.innerHTML = \`<div class="table-wrap"><table>
       <thead><tr>
         <th>Contact</th>
         <th>Channel</th>
-        <th>Sequence Stage</th>
+        <th>Stage</th>
         <th>Status</th>
         <th>When</th>
       </tr></thead>
@@ -2060,7 +2089,7 @@ function renderQueue() {
           <td style="color:#555;font-size:12px">\${fmtRelative(ts)}</td>
         </tr>\`;
       }).join('')}</tbody>
-    </table>\`;
+    </table></div>\`;
   }
 }
 
@@ -2174,9 +2203,9 @@ async function loadBrain() {
 
     const stages = Object.entries(data.byStage || {});
     const stageHtml = stages.length > 0 ? \`
-      <table class="perf-table" style="margin-top:20px">
+      <div class="table-wrap"><table class="perf-table" style="margin-top:20px">
         <thead><tr>
-          <th>Sequence Stage</th><th>Sent</th><th>Replied</th><th>Reply Rate</th><th>Booked</th>
+          <th>Stage</th><th>Sent</th><th>Replied</th><th>Reply Rate</th><th>Booked</th>
         </tr></thead>
         <tbody>\${stages.map(([stage, s]) => {
           const rate = s.sent > 0 ? Math.round((s.replied / s.sent) * 100) : 0;
@@ -2185,7 +2214,7 @@ async function loadBrain() {
             <td><span class="\${rateClass(rate)}">\${rate}%</span></td><td>\${s.booked}</td>
           </tr>\`;
         }).join('')}</tbody>
-      </table>\` : '';
+      </table></div>\` : '';
 
     // Load variant stats in parallel
     let variantRows = '';
