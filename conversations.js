@@ -29,6 +29,7 @@ async function initFromDb() {
         createdAt:             c.created_at,
         totalApiSpend:         c.total_api_spend || 0,
         apiSpendLimitReached:  c.api_spend_limit_reached || false,
+        variant:               c.variant || null,
         ...(c.extra || {}),
         exchanges: []
       };
@@ -77,8 +78,8 @@ function _dbUpsertContact(record) {
     `INSERT INTO contacts
        (contact_id, first_name, city, phone, email, practice_name, tags,
         current_step, booked, booked_at, last_message_at, created_at, extra,
-        total_api_spend, api_spend_limit_reached)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+        total_api_spend, api_spend_limit_reached, variant)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
      ON CONFLICT (contact_id) DO UPDATE SET
        first_name              = EXCLUDED.first_name,
        city                    = EXCLUDED.city,
@@ -92,7 +93,8 @@ function _dbUpsertContact(record) {
        last_message_at         = EXCLUDED.last_message_at,
        extra                   = EXCLUDED.extra,
        total_api_spend         = EXCLUDED.total_api_spend,
-       api_spend_limit_reached = EXCLUDED.api_spend_limit_reached`,
+       api_spend_limit_reached = EXCLUDED.api_spend_limit_reached,
+       variant                 = EXCLUDED.variant`,
     [
       record.contactId, record.firstName, record.city,
       record.phone, record.email, record.practiceName,
@@ -102,7 +104,8 @@ function _dbUpsertContact(record) {
       record.createdAt || Date.now(),
       JSON.stringify(extra),
       record.totalApiSpend || 0,
-      record.apiSpendLimitReached || false
+      record.apiSpendLimitReached || false,
+      record.variant || null
     ]
   ).catch(err => console.error('[Conversations] DB upsert error:', err.message));
 }
@@ -163,6 +166,7 @@ function ensureContact(contactId, defaults = {}) {
       exchanges:            [],
       totalApiSpend:        0,
       apiSpendLimitReached: false,
+      variant:              null,
       ...defaults
     };
     _dbUpsertContact(_cache[contactId]);

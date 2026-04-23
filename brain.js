@@ -109,6 +109,7 @@ function patternKey(body) {
  * @param {string} [meta.message_type]       — 'scripted-sms' | 'followup-sms' | 'email'
  * @param {number|null} [meta.position]      — follow-up hook/nurture position (1-5)
  * @param {boolean|null} [meta.had_enrichment_data] — research data was available when sent
+ * @param {string|null} [meta.variant]       — A/B/C discovery script variant (null = legacy)
  */
 function recordOutbound(contactId, body, step, meta = {}) {
   const messages = loadMessages();
@@ -125,6 +126,7 @@ function recordOutbound(contactId, body, step, meta = {}) {
     message_type,
     position: meta.position ?? null,
     had_enrichment_data: meta.had_enrichment_data ?? null,
+    variant: meta.variant ?? null,
     length_chars: (body || '').length,
     timestamp: Date.now(),
     repliedWithin48h: null, // null = pending; true = replied ≤48h; false = no timely reply
@@ -428,6 +430,68 @@ function getStats() {
   };
 }
 
+// ─── Variant Performance Stats ───────────────────────────────────────────────
+
+/**
+ * Return per-variant performance stats for discovery-script messages (scripted-sms).
+ * Only counts settled messages (repliedWithin48h !== null).
+ * Returns an array of { variant, contactsAssigned, sent, replied, replyRate, booked, bookingRate }
+ */
+function getVariantStats() {
+  const messages = loadMessages();
+  const now = Date.now();
+
+  // Settle any pending > 48h first (read-only view — don't save)
+  const settled = messages.map(m => {
+    if (
+      m.direction === 'outbound' &&
+      m.repliedWithin48h === null &&
+      m.repliedAt === null &&
+      now - m.timestamp > REPLY_WINDOW_MS
+    ) {
+      return { ...m, repliedWithin48h: false };
+    }
+    return m;
+  });
+
+  // Only scripted discovery messages with a non-null variant assignment
+  const scripted = settled.filter(m =>
+    m.direction === 'outbound' &&
+    (m.message_type === 'scripted-sms' || (m.step !== null && m.step !== undefined)) &&
+    m.variant !== null && m.variant !== undefined &&
+    m.repliedWithin48h !== null
+  );
+
+  const byVariant = {};
+  const contactsByVariant = {};
+
+  for (const m of scripted) {
+    const v = m.variant;
+    if (!byVariant[v]) {
+      byVariant[v] = { sent: 0, replied: 0, booked: 0 };
+      contactsByVariant[v] = new Set();
+    }
+    byVariant[v].sent++;
+    contactsByVariant[v].add(m.contactId);
+    if (m.repliedWithin48h) byVariant[v].replied++;
+    if (m.booked)           byVariant[v].booked++;
+  }
+
+  return ['A', 'B', 'C'].map(v => {
+    const s = byVariant[v] || { sent: 0, replied: 0, booked: 0 };
+    const contacts = contactsByVariant[v]?.size || 0;
+    return {
+      variant: v,
+      contactsAssigned: contacts,
+      sent: s.sent,
+      replied: s.replied,
+      replyRate: s.sent > 0 ? Math.round((s.replied / s.sent) * 100) : null,
+      booked: s.booked,
+      bookingRate: s.sent > 0 ? Math.round((s.booked / s.sent) * 100) : null
+    };
+  });
+}
+
 // ─── Build prompt snippet for winning patterns ────────────────────────────────
 
 /**
@@ -563,5 +627,6 @@ module.exports = {
   getWinningPatterns,
   buildWinningPatternsPrompt,
   getStats,
+  getVariantStats,
   startScheduledAnalysis
 };

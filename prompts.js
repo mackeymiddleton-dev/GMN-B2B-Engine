@@ -85,6 +85,15 @@ const PROMPT_META = [
 
 const DEFAULTS = {
   conversationPrompt: config.conversationPrompt,
+  // A/B/C variant scripts — each starts as a copy of the base script.
+  // Edit them independently in the Variant A/B/C tabs of the prompt editor.
+  'conversationPrompt.A': config.conversationPrompt,
+  'conversationPrompt.B': config.conversationPrompt,
+  'conversationPrompt.C': config.conversationPrompt,
+  // Enabled flags for each variant ('true' / 'false')
+  'conversationPrompt.A.enabled': 'true',
+  'conversationPrompt.B.enabled': 'true',
+  'conversationPrompt.C.enabled': 'true',
   systemPrompt: config.systemPrompt,
   'followup.hook': config.followUpPrompts?.hook || '',
   'followup.nurture': config.followUpPrompts?.nurture || '',
@@ -214,6 +223,42 @@ function reset(name) {
 }
 
 /**
+ * Return the list of currently-enabled variants (['A'], ['A','B'], etc.)
+ */
+function getEnabledVariants() {
+  return ['A', 'B', 'C'].filter(v => get(`conversationPrompt.${v}.enabled`) === 'true');
+}
+
+/**
+ * Set enabled state for a specific variant.
+ * @param {string} variant — 'A', 'B', or 'C'
+ * @param {boolean} enabled
+ */
+function setVariantEnabled(variant, enabled) {
+  const name = `conversationPrompt.${variant}.enabled`;
+  if (!(name in DEFAULTS)) throw new Error(`Unknown variant: ${variant}`);
+  const stored = load();
+  stored[name] = enabled ? 'true' : 'false';
+  save(stored);
+}
+
+/**
+ * Pick the next variant to assign to a new contact (round-robin by count).
+ * Returns null if no variants are enabled.
+ * @param {object} allContacts — from conversations.getAll()
+ */
+function pickVariant(allContacts) {
+  const enabled = getEnabledVariants();
+  if (enabled.length === 0) return null;
+  if (enabled.length === 1) return enabled[0];
+  const counts = { A: 0, B: 0, C: 0 };
+  for (const c of Object.values(allContacts)) {
+    if (c.variant && counts[c.variant] !== undefined) counts[c.variant]++;
+  }
+  return enabled.slice().sort((a, b) => counts[a] - counts[b])[0];
+}
+
+/**
  * Return metadata + current value for all prompts, for the admin editor.
  */
 function listAll() {
@@ -317,4 +362,4 @@ async function syncToDb(pool, name, value) {
   }
 }
 
-module.exports = { get, getDefault, set, reset, listAll, seed, syncFromDb, syncToDb };
+module.exports = { get, getDefault, set, reset, listAll, seed, syncFromDb, syncToDb, getEnabledVariants, setVariantEnabled, pickVariant };

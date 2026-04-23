@@ -9,6 +9,7 @@
 
 const ghl           = require('./ghl');
 const conversations = require('./conversations');
+const prompts       = require('./prompts');
 const followupsMod  = require('./followups');
 const { nextWindowMs, nextEmailWindowMs, estimateTimezone, scheduleJob, getAllJobs } = followupsMod;
 
@@ -331,6 +332,12 @@ async function runEnrollment({ tag = '', dryRun = true, delayMs = 2000, signal }
           const { analysis, tz, sendAt, convId, ghlMessages } = row._enroll;
           const { contactId, firstName, city, phone, email, tags } = row;
           conversations.ensureContact(contactId, { firstName, city, phone, email, tags });
+          // Assign A/B/C variant once, never overwrite
+          const preAssign = conversations.get(contactId);
+          if (!preAssign?.variant) {
+            const assignedVariant = prompts.pickVariant(conversations.getAll());
+            if (assignedVariant) conversations.update(contactId, { variant: assignedVariant });
+          }
           const fresh = conversations.get(contactId);
           if (!fresh?.exchanges?.length && ghlMessages.length > 0) {
             for (const ex of formatExchanges(ghlMessages, convId)) {

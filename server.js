@@ -111,7 +111,7 @@ function scheduleStep3AutoSend(contactId, resolvedConvId, skipReplyGuard = false
         step: 3,
         conversationId: resolvedConvId || null
       });
-      brain.recordOutbound(contactId, STEP3_TEXT, 3);
+      brain.recordOutbound(contactId, STEP3_TEXT, 3, { variant: conversations.get(contactId)?.variant || null });
       conversations.update(contactId, { currentStep: 3 });
       followups.scheduleSilenceCheck(contactId, 3, STEP3_TEXT);
       console.log(`[Step3Auto] Step 3 sent to ${contactId} (research ${researchDone ? 'complete' : 'timed out'})`);
@@ -223,7 +223,7 @@ async function sendScanVisibilityMessage(contactId, resolvedConvId, sr) {
       step: 3,
       conversationId: resolvedConvId || null
     });
-    brain.recordOutbound(contactId, msg, 3);
+    brain.recordOutbound(contactId, msg, 3, { variant: conversations.get(contactId)?.variant || null });
     console.log(`[ScanWatch] Visibility follow-up sent to ${contactId}`);
   } catch (err) {
     console.error(`[ScanWatch] Failed to send visibility message for ${contactId}:`, err.message);
@@ -435,6 +435,16 @@ app.post('/webhooks/ghl/enrolled', async (req, res) => {
   // Create/update local contact record
   conversations.ensureContact(contactId, { firstName, city, phone, email, tags });
   conversations.update(contactId, { email, tags });
+
+  // Assign A/B/C variant if this is a new contact (only set once, never overwrite)
+  const freshEnrolled = conversations.get(contactId);
+  if (!freshEnrolled?.variant) {
+    const assignedVariant = prompts.pickVariant(conversations.getAll());
+    if (assignedVariant) {
+      conversations.update(contactId, { variant: assignedVariant });
+      console.log(`[Enrolled] Assigned variant ${assignedVariant} to ${contactId}`);
+    }
+  }
 
   const tz = followups.estimateTimezone(city);
 
@@ -676,7 +686,10 @@ async function handleInbound({ contactId, conversationId, messageBody, firstName
   }
 
   // ── 5. Build system prompt with live data + winning patterns ─────────────────
-  let systemContent = prompts.get('conversationPrompt');
+  // Pick variant-specific prompt (A/B/C). Fall back to base if not set.
+  const contactVariant = fresh?.variant || null;
+  const variantPromptKey = contactVariant ? `conversationPrompt.${contactVariant}` : 'conversationPrompt';
+  let systemContent = prompts.get(variantPromptKey) || prompts.get('conversationPrompt');
 
   if (resolvedFirstName || fresh?.firstName) {
     systemContent += `\n\nPROSPECT FIRST NAME: ${resolvedFirstName || fresh?.firstName}`;
@@ -806,9 +819,9 @@ async function handleInbound({ contactId, conversationId, messageBody, firstName
       step: detectedStep,
       conversationId: resolvedConvId || null
     });
-    brain.recordOutbound(contactId, reply, detectedStep);
+    brain.recordOutbound(contactId, reply, detectedStep, { variant: contactVariant });
     followups.scheduleSilenceCheck(contactId, detectedStep, reply);
-    console.log(`[Webhook] Sent to ${contactId} (step ${detectedStep}): "${reply.slice(0, 80)}"`);
+    console.log(`[Webhook] Sent to ${contactId} (step ${detectedStep}, variant ${contactVariant || 'none'}): "${reply.slice(0, 80)}"`);
   }
 
   // ── 9. Send address confirmation (if queued from PRACTICE_DETECTED) ───────────
@@ -821,7 +834,7 @@ async function handleInbound({ contactId, conversationId, messageBody, firstName
         step: 3,
         conversationId: resolvedConvId || null
       });
-      brain.recordOutbound(contactId, confirmationMsg, 3);
+      brain.recordOutbound(contactId, confirmationMsg, 3, { variant: contactVariant });
       followups.scheduleSilenceCheck(contactId, 3, confirmationMsg);
       console.log(`[Webhook] Sent address confirmation to ${contactId}: "${confirmationMsg.slice(0, 80)}"`);
     } catch (err) {
@@ -878,7 +891,7 @@ async function handleConfirmationReply(contactId, messageBody, contact, resolved
     const clarification = "No problem — what's the exact name as it appears on Google Maps, and what street is it on?";
     await ghl.sendMessage(contactId, clarification);
     conversations.addExchange(contactId, { direction: 'outbound', body: clarification, step: 3, conversationId: resolvedConvId || null });
-    brain.recordOutbound(contactId, clarification, 3);
+    brain.recordOutbound(contactId, clarification, 3, { variant: contact.variant || null });
     followups.scheduleSilenceCheck(contactId, 3, clarification);
     console.log(`[Webhook] Confirmation denied for ${contactId} — asking for correction`);
     return;
@@ -890,7 +903,7 @@ async function handleConfirmationReply(contactId, messageBody, contact, resolved
     const reprompt = "Just want to make sure — is that your practice listing? Reply yes or no.";
     await ghl.sendMessage(contactId, reprompt);
     conversations.addExchange(contactId, { direction: 'outbound', body: reprompt, step: 3, conversationId: resolvedConvId || null });
-    brain.recordOutbound(contactId, reprompt, 3);
+    brain.recordOutbound(contactId, reprompt, 3, { variant: contact.variant || null });
     followups.scheduleSilenceCheck(contactId, 3, reprompt);
     return;
   }
@@ -926,7 +939,7 @@ async function handleRetryName(contactId, messageBody, contact, resolvedConvId) 
         const confirmMsg = `Found ${confirmName} at ${confirmAddress} — is that the right one?`;
         await ghl.sendMessage(contactId, confirmMsg);
         conversations.addExchange(contactId, { direction: 'outbound', body: confirmMsg, step: 3, conversationId: resolvedConvId || null });
-        brain.recordOutbound(contactId, confirmMsg, 3);
+        brain.recordOutbound(contactId, confirmMsg, 3, { variant: contact.variant || null });
         followups.scheduleSilenceCheck(contactId, 3, confirmMsg);
         console.log(`[Webhook] Retry confirmation sent to ${contactId}: ${confirmName}`);
         return;
@@ -1304,6 +1317,38 @@ app.post('/admin/prompts/:name', requireAdmin, (req, res) => {
   } catch (err) {
     console.error(`[Prompts] Save failed for ${name}:`, err.message);
     res.status(400).json({ error: err.message });
+  }
+});
+
+// ─── Admin: Variant Enable/Disable ────────────────────────────────────────────
+
+app.post('/admin/variants/:variant/enabled', requireAdmin, (req, res) => {
+  const { variant } = req.params;
+  if (!['A', 'B', 'C'].includes(variant)) return res.status(400).json({ error: 'Invalid variant. Must be A, B, or C.' });
+  const { enabled } = req.body;
+  if (typeof enabled !== 'boolean') return res.status(400).json({ error: 'enabled field must be a boolean.' });
+  try {
+    prompts.setVariantEnabled(variant, enabled);
+    prompts.syncToDb(_promptsPool, `conversationPrompt.${variant}.enabled`, enabled ? 'true' : 'false')
+      .catch(err => console.error(`[Variants] DB write failed for ${variant}.enabled:`, err.message));
+    console.log(`[Variants] Variant ${variant} ${enabled ? 'enabled' : 'disabled'}`);
+    res.json({ ok: true, variant, enabled });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get('/api/brain/variants', requireAdmin, (req, res) => {
+  try {
+    const stats = brain.getVariantStats();
+    const enabledList = prompts.getEnabledVariants();
+    const result = stats.map(s => ({
+      ...s,
+      enabled: enabledList.includes(s.variant)
+    }));
+    res.json({ ok: true, variants: result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -2015,6 +2060,13 @@ function buildPromptEditorPage(adminKey, promptsList) {
     sectionLabel: p.sectionLabel || null
   })));
 
+  // Build variant data: text + enabled flag for A/B/C
+  const variantsJson = JSON.stringify(['A', 'B', 'C'].map(v => ({
+    variant: v,
+    text: prompts.get(`conversationPrompt.${v}`) || prompts.get('conversationPrompt'),
+    enabled: prompts.get(`conversationPrompt.${v}.enabled`) === 'true'
+  })));
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2065,6 +2117,40 @@ textarea:focus{border-color:#4263eb}
 .modal-btn{background:#4263eb;color:#fff;border:none;border-radius:8px;padding:10px 32px;font-size:14px;font-weight:600;cursor:pointer}
 .modal-btn:hover{background:#3b5bdb}
 .last-saved{font-size:11px;color:#3b5bdb;margin-left:8px}
+.variant-section{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:16px;padding:28px 28px 24px;width:100%;max-width:820px;margin:0 auto 24px}
+.variant-section-title{font-size:15px;font-weight:700;color:#fff;margin-bottom:4px}
+.variant-section-desc{font-size:13px;color:#666;margin-bottom:20px;line-height:1.5}
+.variant-tabs{display:flex;gap:0;border-bottom:1px solid #2a2a2a;margin-bottom:20px}
+.variant-tab{padding:8px 20px;font-size:13px;font-weight:600;color:#666;cursor:pointer;border:none;background:none;border-bottom:2px solid transparent;margin-bottom:-1px;transition:color .15s,border-color .15s}
+.variant-tab.active{color:#748ffc;border-bottom-color:#4263eb}
+.variant-tab:hover:not(.active){color:#aaa}
+.variant-tab-panel{display:none}
+.variant-tab-panel.active{display:block}
+.variant-tab-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px}
+.variant-toggle{display:flex;align-items:center;gap:8px;font-size:13px;color:#888}
+.toggle-switch{position:relative;width:36px;height:20px;cursor:pointer}
+.toggle-switch input{opacity:0;width:0;height:0}
+.toggle-track{position:absolute;inset:0;background:#333;border-radius:20px;transition:background .2s}
+.toggle-switch input:checked + .toggle-track{background:#22c55e}
+.toggle-thumb{position:absolute;top:3px;left:3px;width:14px;height:14px;background:#fff;border-radius:50%;transition:transform .2s}
+.toggle-switch input:checked ~ .toggle-thumb{transform:translateX(16px)}
+.toggle-label{font-weight:600}
+.toggle-label.on{color:#22c55e}
+.toggle-label.off{color:#555}
+.variant-stats-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:20px}
+.variant-stats-table th{text-align:left;padding:8px 12px;color:#555;font-weight:600;font-size:11px;letter-spacing:.06em;text-transform:uppercase;border-bottom:1px solid #2a2a2a}
+.variant-stats-table td{padding:9px 12px;border-bottom:1px solid #1f1f1f;color:#ccc}
+.variant-stats-table tr:last-child td{border-bottom:none}
+.vs-badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700}
+.vs-badge-A{background:#3b5bdb22;color:#748ffc}
+.vs-badge-B{background:#d97706/20;color:#f59e0b;background-color:rgba(217,119,6,0.15)}
+.vs-badge-C{background:rgba(16,185,129,0.12);color:#34d399}
+.vs-enabled{color:#22c55e;font-weight:600}
+.vs-disabled{color:#555;font-weight:600}
+.rate-pill{display:inline-block;padding:2px 8px;border-radius:8px;font-size:12px;font-weight:600}
+.rate-high{background:rgba(34,197,94,0.12);color:#22c55e}
+.rate-mid{background:rgba(245,158,11,0.12);color:#f59e0b}
+.rate-low{background:rgba(107,114,128,0.12);color:#6b7280}
 </style>
 </head>
 <body>
@@ -2087,13 +2173,175 @@ textarea:focus{border-color:#4263eb}
     BUILD v8 (fast-preview) · LOADED ${new Date().toISOString().replace('T',' ').slice(0,19)} UTC
   </div>
 </div>
+<div id="variant-section"></div>
 <div id="prompts"></div>
 
 <script>
 const ADMIN_KEY = ${JSON.stringify(adminKey)};
 const ALL_PROMPTS = ${promptsJson};
+const VARIANTS = ${variantsJson};
 
 function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') }
+
+// ─── Variant Section ──────────────────────────────────────────────────────────
+
+let _activeTab = 'A';
+
+function renderVariantSection() {
+  const container = document.getElementById('variant-section');
+  const tabsHtml = ['A','B','C'].map(v =>
+    \`<button class="variant-tab\${v===_activeTab?' active':''}" onclick="setTab('\${v}')">\${v === 'A' ? 'Variant A' : v === 'B' ? 'Variant B' : 'Variant C'}</button>\`
+  ).join('');
+
+  const panelsHtml = VARIANTS.map(vd => {
+    const isActive = vd.variant === _activeTab;
+    const charCount = vd.text.length;
+    return \`
+      <div class="variant-tab-panel\${isActive?' active':''}" id="vp-\${vd.variant}">
+        <div class="variant-tab-header">
+          <div style="font-size:13px;color:#888">Discovery script for contacts assigned to Variant \${vd.variant}</div>
+          <div class="variant-toggle">
+            <span class="toggle-label \${vd.enabled?'on':'off'}" id="vtl-\${vd.variant}">\${vd.enabled?'Enabled':'Disabled'}</span>
+            <label class="toggle-switch" title="Enable / disable this variant">
+              <input type="checkbox" id="vtog-\${vd.variant}" \${vd.enabled?'checked':''} onchange="toggleVariant('\${vd.variant}',this.checked)">
+              <span class="toggle-track"></span>
+              <span class="toggle-thumb"></span>
+            </label>
+          </div>
+        </div>
+        <textarea id="vta-\${vd.variant}" rows="16" spellcheck="false">\${escapeHtml(vd.text)}</textarea>
+        <div class="actions">
+          <button class="btn btn-save" onclick="saveVariant('\${vd.variant}')">Save Variant \${vd.variant}</button>
+          <span class="status" id="vstatus-\${vd.variant}"></span>
+          <span class="char-count" id="vchars-\${vd.variant}">\${charCount} chars</span>
+        </div>
+      </div>
+    \`;
+  }).join('');
+
+  container.innerHTML = \`
+    <div style="max-width:820px;margin:0 auto 0;padding-bottom:10px;border-bottom:1px solid #2a2a2a;margin-bottom:24px">
+      <span style="font-size:13px;font-weight:700;letter-spacing:.06em;color:#555;text-transform:uppercase">Discovery Script Variants (A / B / C)</span>
+    </div>
+    <div class="variant-section" id="variant-card">
+      <div class="variant-section-title">A/B/C Discovery Script Testing</div>
+      <div class="variant-section-desc">Each new contact is permanently assigned one variant. Edit scripts independently below, then enable or disable each variant from the rotation.</div>
+      <div class="variant-tabs">\${tabsHtml}</div>
+      <div id="variant-panels">\${panelsHtml}</div>
+      <div style="margin-top:28px;border-top:1px solid #2a2a2a;padding-top:24px">
+        <div style="font-size:13px;font-weight:700;color:#fff;margin-bottom:12px">Performance Comparison</div>
+        <div id="variant-stats-table"><span style="font-size:13px;color:#555">Loading stats\u2026</span></div>
+      </div>
+    </div>
+  \`;
+
+  // Bind char counters
+  VARIANTS.forEach(vd => {
+    const ta = document.getElementById('vta-' + vd.variant);
+    if (ta) ta.addEventListener('input', () => {
+      document.getElementById('vchars-' + vd.variant).textContent = ta.value.length + ' chars';
+    });
+  });
+
+  loadVariantStats();
+}
+
+function setTab(v) {
+  _activeTab = v;
+  document.querySelectorAll('.variant-tab').forEach(btn => btn.classList.remove('active'));
+  document.querySelectorAll('.variant-tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.variant-tab').forEach(btn => { if (btn.textContent.includes(v)) btn.classList.add('active'); });
+  const panel = document.getElementById('vp-' + v);
+  if (panel) panel.classList.add('active');
+}
+
+async function saveVariant(v) {
+  const ta = document.getElementById('vta-' + v);
+  const statusEl = document.getElementById('vstatus-' + v);
+  if (!ta) return;
+  const name = 'conversationPrompt.' + v;
+  showModal('Saving\u2026', 'Saving Variant ' + v + ' script\u2026', false);
+  try {
+    const res = await fetch('/admin/prompts/' + encodeURIComponent(name), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-key': ADMIN_KEY },
+      body: JSON.stringify({ text: ta.value })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    const timeStr = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    statusEl.innerHTML = '\u2713 Saved <span class="last-saved">at ' + timeStr + '</span>';
+    statusEl.className = 'status status-ok';
+    const vd = VARIANTS.find(x => x.variant === v);
+    if (vd) vd.text = ta.value;
+    showModal('Variant Saved', 'Variant ' + v + ' script saved at ' + timeStr + '.', false);
+  } catch(err) {
+    statusEl.textContent = '\u2717 Error: ' + err.message;
+    statusEl.className = 'status status-err';
+    showModal('Save Failed', 'Could not save Variant ' + v + ': ' + err.message, true);
+  }
+}
+
+async function toggleVariant(v, enabled) {
+  const statusEl = document.getElementById('vstatus-' + v);
+  const labelEl = document.getElementById('vtl-' + v);
+  const chk = document.getElementById('vtog-' + v);
+  try {
+    const res = await fetch('/admin/variants/' + v + '/enabled', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-key': ADMIN_KEY },
+      body: JSON.stringify({ enabled })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    const vd = VARIANTS.find(x => x.variant === v);
+    if (vd) vd.enabled = enabled;
+    labelEl.textContent = enabled ? 'Enabled' : 'Disabled';
+    labelEl.className = 'toggle-label ' + (enabled ? 'on' : 'off');
+    if (statusEl) { statusEl.textContent = enabled ? '\u2713 Enabled' : 'Disabled'; statusEl.className = 'status ' + (enabled ? 'status-ok' : ''); }
+  } catch(err) {
+    if (chk) chk.checked = !enabled; // revert
+    showModal('Toggle Failed', 'Could not toggle Variant ' + v + ': ' + err.message, true);
+  }
+}
+
+async function loadVariantStats() {
+  const el = document.getElementById('variant-stats-table');
+  if (!el) return;
+  try {
+    const res = await fetch('/api/brain/variants', { headers: { 'x-admin-key': ADMIN_KEY } });
+    const data = await res.json();
+    if (!res.ok || !data.variants) { el.innerHTML = '<span style="font-size:13px;color:#555">No variant data yet.</span>'; return; }
+    const vv = data.variants;
+    const noData = vv.every(v => v.sent === 0);
+    if (noData) { el.innerHTML = '<span style="font-size:13px;color:#555">No variant messages sent yet. Stats will appear here once contacts start being assigned.</span>'; return; }
+
+    function ratePill(rate) {
+      if (rate === null) return '<span style="color:#555">—</span>';
+      const cls = rate >= 30 ? 'rate-high' : rate >= 15 ? 'rate-mid' : 'rate-low';
+      return \`<span class="rate-pill \${cls}">\${rate}%</span>\`;
+    }
+
+    const rows = vv.map(v => \`<tr>
+      <td><span class="vs-badge vs-badge-\${v.variant}">\${v.variant}</span></td>
+      <td><span class="\${v.enabled?'vs-enabled':'vs-disabled'}">\${v.enabled?'Yes':'No'}</span></td>
+      <td>\${v.contactsAssigned}</td>
+      <td>\${v.sent}</td>
+      <td>\${ratePill(v.replyRate)}</td>
+      <td>\${v.booked}</td>
+      <td>\${ratePill(v.bookingRate)}</td>
+    </tr>\`).join('');
+
+    el.innerHTML = \`<table class="variant-stats-table">
+      <thead><tr>
+        <th>Variant</th><th>Enabled</th><th>Contacts</th><th>Msgs Sent</th><th>Reply Rate</th><th>Booked</th><th>Book Rate</th>
+      </tr></thead>
+      <tbody>\${rows}</tbody>
+    </table>\`;
+  } catch(err) {
+    el.innerHTML = '<span style="font-size:13px;color:#ef4444">Failed to load stats: ' + err.message + '</span>';
+  }
+}
 
 function renderPrompts() {
   const container = document.getElementById('prompts');
@@ -2233,6 +2481,7 @@ async function resetPrompt(name) {
   }
 }
 
+renderVariantSection();
 renderPrompts();
 </script>
 </body>
