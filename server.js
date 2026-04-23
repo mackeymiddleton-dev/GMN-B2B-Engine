@@ -496,6 +496,35 @@ app.post('/webhooks/ghl/enrolled', async (req, res) => {
   console.log(`[Enrolled] Contact ${contactId} enrolled — silence check + email queued`);
 });
 
+// ─── GHL Appointment Webhook ──────────────────────────────────────────────────
+// Fires when a calendar appointment is created in GHL.
+// This is the canonical "booked" signal — the contact is now counted in stats.
+// Configure this in GHL: Automation → Webhooks → AppointmentCreated → POST to
+// /webhooks/ghl/appointment
+
+app.post('/webhooks/ghl/appointment', async (req, res) => {
+  if (!verifyGhlWebhook(req, res)) return;
+  res.json({ received: true });
+
+  const payload = req.body;
+  const contactId = payload.contactId || payload.contact_id;
+  if (!contactId) {
+    console.log('[Appointment] No contactId in payload — ignoring');
+    return;
+  }
+
+  const contact = conversations.get(contactId);
+  if (!contact) {
+    console.log(`[Appointment] Contact ${contactId} not in our system — ignoring`);
+    return;
+  }
+
+  // Mark as booked in local record (if not already) and record in brain for stats
+  conversations.update(contactId, { booked: true });
+  brain.recordBooking(contactId);
+  console.log(`[Appointment] Contact ${contactId} (${contact.firstName}) has a confirmed GHL appointment — marked booked`);
+});
+
 // ─── GHL Contact-Updated Webhook ──────────────────────────────────────────────
 // Fires when GHL updates a contact (e.g. a tag is added). When the "Disable AI"
 // tag is detected, all pending email jobs are cancelled immediately so no further
@@ -816,12 +845,13 @@ async function handleInbound({ contactId, conversationId, messageBody, firstName
     }
   }
 
-  // [BOOKED] — mark contact as booked
+  // [BOOKED] — contact has agreed to a time; stop AI responding but don't
+  // count as a confirmed booking yet. Real booking stat is set when a GHL
+  // calendar appointment is created (see /webhooks/ghl/appointment below).
   if (reply.includes('[BOOKED]')) {
     reply = reply.replace(/\[BOOKED\]\s*/gi, '').trim();
     conversations.update(contactId, { booked: true });
-    brain.recordBooking(contactId);
-    console.log(`[Webhook] Contact ${contactId} booked!`);
+    console.log(`[Webhook] Contact ${contactId} agreed to book — AI paused, awaiting GHL appointment`);
   }
 
   // Update step
@@ -1876,8 +1906,8 @@ tr:hover td{background:#18181c}
   <div class="stat-card"><div class="val" id="s-queued">—</div><div class="lbl">In Queue</div><div class="sub">messages pending</div></div>
   <div class="stat-card"><div class="val" id="s-today" style="color:#f59e0b">—</div><div class="lbl">Sending Today</div><div class="sub">scheduled for today</div></div>
   <div class="stat-card stat-highlight"><div class="val" id="s-sent">—</div><div class="lbl">Sent Total</div><div class="sub">all time</div></div>
-  <div class="stat-card"><div class="val" id="s-reply">—</div><div class="lbl">Reply Rate</div><div class="sub">inbound ÷ sent</div></div>
-  <div class="stat-card"><div class="val" id="s-booked" style="color:#4ade80">—</div><div class="lbl">Booked</div><div class="sub">zoom calls scheduled</div></div>
+  <div class="stat-card"><div class="val" id="s-reply">—</div><div class="lbl">Reply Rate</div><div class="sub">replied within 48h</div></div>
+  <div class="stat-card"><div class="val" id="s-booked" style="color:#4ade80">—</div><div class="lbl">Booked</div><div class="sub">GHL appointments</div></div>
 </div>
 
 <!-- ── Follow-Up Queue ── -->
