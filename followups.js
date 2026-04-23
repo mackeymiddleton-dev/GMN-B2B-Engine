@@ -109,12 +109,12 @@ const WINDOW_MIN_END  = 30; // exclusive upper bound on minutes (0–29 = :00, 3
 // ─── Cadence Constants ────────────────────────────────────────────────────────
 
 // Positions 2-5: first-week hooks (days 0, 2, 4, 7 from first follow-up)
-// Positions 6-21: bi-weekly nurtures (every 3-4 days for 8 weeks = 16 messages)
-// Position 22+: monthly nurtures indefinitely
+// Positions 6-9:  nurtures every 4 days for 2 weeks (4 messages)
+// Position 10+: monthly nurtures indefinitely
 
-const BIWEEKLY_START = 6;   // first bi-weekly position
-const BIWEEKLY_END = 21;    // last bi-weekly position (16 messages over ~8 weeks)
-const BIWEEKLY_DAYS_MIN = 3;
+const BIWEEKLY_START = 6;   // first nurture position
+const BIWEEKLY_END = 9;     // last nurture position (4 messages over ~2 weeks)
+const BIWEEKLY_DAYS_MIN = 4;
 const BIWEEKLY_DAYS_MAX = 4;
 const MONTHLY_DAYS = 30;
 
