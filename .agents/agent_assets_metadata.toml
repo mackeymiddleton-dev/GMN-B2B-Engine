@@ -12,3 +12,9 @@ id = "w7TdVRDPUX6zIyKmajv32"
 uri = "file://docs/plain-english-guide.md"
 type = "text"
 title = "Powered Up AI — Plain English Guide"
+
+[[outputs]]
+id = "JEW5yg1Oz0y7Hd1WQQZZ0"
+uri = "file://docs/powered-up-ai-full-breakdown.md"
+type = "text"
+title = "Powered Up AI — Full System Breakdown"
