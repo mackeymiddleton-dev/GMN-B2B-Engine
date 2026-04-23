@@ -1307,24 +1307,30 @@ app.post('/api/admin/rebuild-queue', requireAdmin, async (req, res) => {
     const outbound = exchanges.filter(e => e.direction === 'outbound');
     const inbound  = exchanges.filter(e => e.direction === 'inbound');
 
-    // Skip: never received any outbound message (nothing to follow up on)
+    // Skip: never received any outbound message (nothing to follow up on yet)
     if (outbound.length === 0) { results.skipped.push({ contactId, firstName, reason: 'no_outbound' }); continue; }
 
-    // Skip: contact is actively in conversation (has inbound replies)
-    if (inbound.length > 0) { results.skipped.push({ contactId, firstName, reason: 'has_replies' }); continue; }
+    const tz = followups.estimateTimezone(contact.city || '');
 
-    // Contact got at least one outbound, never replied, not booked/opted-out,
-    // and has no pending job → schedule hook position 1 for the next send window.
-    const tz      = followups.estimateTimezone(contact.city || '');
-    const sendAt  = followups.nextWindowMs(Date.now(), tz);
-    followups.scheduleJob({
-      contactId,
-      type: 'hook',
-      position: 1,
-      sendAt,
-      context: { timezone: tz, firstName, city: contact.city || '', phone: contact.phone || '' }
-    });
-    results.scheduled.push({ contactId, firstName, sendAt: new Date(sendAt).toISOString() });
+    if (inbound.length === 0) {
+      // Never replied — schedule hook 1 at next available send window (today/tomorrow)
+      const sendAt = followups.nextWindowMs(Date.now(), tz);
+      followups.scheduleJob({
+        contactId, type: 'hook', position: 1, sendAt,
+        context: { timezone: tz, firstName, city: contact.city || '', phone: contact.phone || '' }
+      });
+      results.scheduled.push({ contactId, firstName, replied: false, sendAt: new Date(sendAt).toISOString() });
+    } else {
+      // Has replied but queue was lost — schedule a nurture a few days out so
+      // they aren't flooded; the AI will tailor the message to their history.
+      const DAY = 24 * 60 * 60 * 1000;
+      const sendAt = followups.nextWindowMs(Date.now() + 3 * DAY, tz);
+      followups.scheduleJob({
+        contactId, type: 'nurture', position: 2, sendAt,
+        context: { timezone: tz, firstName, city: contact.city || '', phone: contact.phone || '' }
+      });
+      results.scheduled.push({ contactId, firstName, replied: true, sendAt: new Date(sendAt).toISOString() });
+    }
   }
 
   console.log(`[RebuildQueue] Scheduled ${results.scheduled.length}, skipped ${results.skipped.length}`);
