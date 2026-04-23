@@ -2232,9 +2232,9 @@ async function loadBrain() {
           variantRows = \`
             <div style="margin-top:24px;border-top:1px solid #1e1e1e;padding-top:20px">
               <div style="font-size:12px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.06em;margin-bottom:14px">A/B/C Script Variant Performance</div>
-              <table class="perf-table">
+              <div class="table-wrap"><table class="perf-table">
                 <thead><tr>
-                  <th>Variant</th><th>Enabled</th><th>Contacts</th><th>Sent</th><th>Replied</th><th>Reply Rate</th><th>Booked</th><th>Book Rate</th>
+                  <th>Variant</th><th>Enabled</th><th>Contacts</th><th>Sent</th><th>Replied</th><th>Reply %</th><th>Booked</th><th>Book %</th>
                 </tr></thead>
                 <tbody>\${vData.variants.map(v => {
                   const col = variantColors[v.variant] || '#aaa';
@@ -2249,7 +2249,7 @@ async function loadBrain() {
                     <td>\${vRatePill(v.bookingRate)}</td>
                   </tr>\`;
                 }).join('')}</tbody>
-              </table>
+              </table></div>
               <div style="font-size:11px;color:#3a3a3a;margin-top:10px">Only settled scripted-SMS messages (reply window closed). Edit scripts at <a href="/admin/prompts?key=\${ADMIN_KEY}" style="color:#818cf8">Prompt Editor</a>.</div>
             </div>\`;
         } else {
@@ -2300,10 +2300,10 @@ async function loadSpend() {
         \${atLimit > 0 ? '<div class="qs-item" style="color:#ef4444"><strong>'+atLimit+'</strong> at $1 limit</div>' : ''}
         <div class="qs-item" style="color:#444">Cap: $1.00 per contact</div>
       </div>
-      <table>
+      <div class="table-wrap"><table>
         <thead><tr>
           <th>Contact</th>
-          <th>Total Spend</th>
+          <th>Spend</th>
           <th>Status</th>
           <th>Action</th>
         </tr></thead>
@@ -2325,16 +2325,16 @@ async function loadSpend() {
             </td>
             <td>
               <div style="font-weight:600;color:#e2e2e2">$\${(c.totalApiSpend||0).toFixed(4)}</div>
-              <div style="margin-top:5px;height:4px;background:#1f1f1f;border-radius:2px;width:100px">
+              <div style="margin-top:5px;height:4px;background:#1f1f1f;border-radius:2px;width:80px">
                 <div style="height:4px;background:\${barColor};border-radius:2px;width:\${pct.toFixed(1)}%"></div>
               </div>
-              <div style="font-size:10px;color:#444;margin-top:2px">\${pct.toFixed(0)}% of $1 cap</div>
+              <div style="font-size:10px;color:#444;margin-top:2px">\${pct.toFixed(0)}% of cap</div>
             </td>
             <td>\${limitBadge}</td>
             <td>\${resetBtn}</td>
           </tr>\`;
         }).join('')}</tbody>
-      </table>
+      </table></div>
     \`;
   } catch (err) {
     el.innerHTML = '<div class="empty">Failed to load: ' + escHtml(err.message) + '</div>';
