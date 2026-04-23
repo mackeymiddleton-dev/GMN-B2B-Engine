@@ -347,7 +347,7 @@ app.post('/webhooks/ghl/inbound', async (req, res) => {
   }
 
   // ── Opt-out blocklist check ───────────────────────────────────────────────
-  if (optouts.isOptedOut(contactId)) {
+  if (await optouts.isOptedOut(contactId)) {
     console.log(`[Webhook] Contact ${contactId} is opted out — silently ignoring inbound`);
     return;
   }
@@ -357,7 +357,7 @@ app.post('/webhooks/ghl/inbound', async (req, res) => {
     console.log(`[Webhook] Contact ${contactId} sent opt-out keyword "${messageBody}" — cancelling jobs and confirming`);
     followups.cancelContactJobs(contactId);
     followups.cancelEmailJobs(contactId);
-    optouts.add(contactId);
+    await optouts.add(contactId);
     ghl.sendMessage(contactId, "You've been unsubscribed. You won't receive any more messages from us.").catch(err => {
       console.error(`[Optout] Failed to send confirmation to ${contactId}:`, err.message);
     });
@@ -1287,8 +1287,8 @@ app.get('/api/followups/:contactId', requireAdmin, (req, res) => {
 
 // ─── Admin: Opt-Out Blocklist ──────────────────────────────────────────────────
 
-app.get('/api/optouts', requireAdmin, (req, res) => {
-  res.json(optouts.getAll());
+app.get('/api/optouts', requireAdmin, async (req, res) => {
+  res.json(await optouts.getAll());
 });
 
 // ─── Admin: Dashboard ─────────────────────────────────────────────────────────

@@ -1041,7 +1041,7 @@ async function processHookOrNurture(job) {
 }
 
 async function processJob(job) {
-  if (optouts.isOptedOut(job.contactId)) {
+  if (await optouts.isOptedOut(job.contactId)) {
     console.log(`[Followups] Contact ${job.contactId} is opted out — cancelling job ${job.id}`);
     updateJob(job.id, { status: 'cancelled', error: 'Contact opted out' });
     return;
