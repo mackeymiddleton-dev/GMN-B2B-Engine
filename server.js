@@ -1878,12 +1878,8 @@ tr:hover td{background:#18181c}
 
   <div class="queue-summary" id="queue-summary"></div>
   <div id="followups-content"><div class="loading">Loading&hellip;</div></div>
-  <div style="margin-top:12px;border-top:1px solid #2a2a2a;padding-top:12px;display:flex;flex-wrap:wrap;gap:10px;align-items:center">
-    <div id="pause-controls">
-      <button id="pause-btn" onclick="togglePause()" style="background:#3a1a1a;color:#f87171;border:1px solid #5a2d2d;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600">⏸ Pause Scheduler</button>
-    </div>
-    <button onclick="cancelAllSms()" style="background:#3a0a0a;color:#fca5a5;border:1px solid #7f1d1d;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px">🛑 Cancel All Pending SMS</button>
-    <button onclick="rebuildQueue()" style="background:#1a3a1a;color:#4ade80;border:1px solid #2d5a2d;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px">Rebuild Queue (recover lost jobs)</button>
+  <div style="margin-top:12px;border-top:1px solid #2a2a2a;padding-top:12px;display:flex;align-items:center;gap:12px">
+    <button id="pause-btn" onclick="togglePause()" style="background:#3a1a1a;color:#f87171;border:1px solid #5a2d2d;padding:8px 20px;border-radius:6px;cursor:pointer;font-size:14px;font-weight:600">⏸ Pause Everything</button>
     <span id="rebuild-status" style="font-size:12px;color:#888"></span>
   </div>
 </div>
