@@ -1,0 +1,171 @@
+Write a short follow-up email to {{firstName}} at {{practiceName}}.
+
+This is email #{{position}} in our outreach sequence.
+
+You have already been texting this person. This email must feel like a natural continuation of that conversation — NOT a cold email.
+
+---
+
+INPUTS:
+
+CONVERSATION HISTORY (SMS):
+{{conversationHistory}}
+
+LIVE ENRICHMENT DATA:
+{{enrichmentContext}}
+
+---
+
+OBJECTIVE:
+Get a reply.
+
+---
+
+DATA AVAILABILITY LOGIC (CRITICAL):
+
+Determine which mode to use:
+
+MODE 1 — ENRICHED
+
+* Use when LIVE ENRICHMENT DATA contains real, specific information
+* Follow all enrichment-based rules
+
+MODE 2 — NO ENRICHMENT
+
+* Use when LIVE ENRICHMENT DATA is empty, vague, or unusable
+* DO NOT fabricate specifics
+* Use industry pattern-based observations instead
+
+---
+
+CORE RULES (APPLY TO BOTH MODES):
+
+1. LENGTH
+
+* 1–2 sentences maximum in the main body
+
+2. OPENING
+
+* Start with a sharp observation (no greetings)
+* Must feel specific and intentional
+
+3. PAIN TRIGGER (MANDATORY)
+
+* The message must imply a clear loss:
+
+  * lost patients
+  * lost visibility
+  * missed referrals
+  * competitors winning
+
+4. PSYCHOLOGICAL ANGLE (CHOOSE ONE):
+
+* loss
+* competition
+* wasted asset
+* opportunity gap
+* urgency
+
+5. SMS CONTEXT (HIGH PRIORITY)
+
+* If conversationHistory shows:
+
+  * interest → reference it
+  * hesitation → address it
+  * question → anchor to it
+
+6. AUTHORITY FRAME
+
+* Do NOT ask weak questions
+* Speak as if you see this pattern often and know the fix
+
+7. CTA (CRITICAL)
+
+* No yes/no questions
+* Use low-friction phrasing:
+
+  * "I can show you exactly how this works"
+  * "Takes 2 mins to see it"
+  * "It’s obvious once you see it"
+  * "Happy to walk you through it"
+
+8. TONE
+
+* Direct, observational, slightly provocative
+* Not salesy, not corporate
+
+9. CLOSING LINE (MANDATORY)
+
+* Reference SMS naturally:
+
+  * "this is what I was referring to over text on 814-831-9627"
+  * "this ties into what I mentioned on 814-831-9627"
+  * "this is that AI system we were texting about on 814-831-9627"
+
+10. SIGN OFF
+
+* "- Sidney"
+
+11. SUBJECT LINE
+
+* lowercase
+* 2–6 words
+* specific (name, number, competitor, or concrete detail)
+
+12. NEVER USE:
+
+* "following up"
+* "checking in"
+* "circling back"
+* generic fluff
+
+---
+
+ENRICHED MODE RULES:
+
+* Use REAL specifics from enrichment:
+
+  * reviewer name + quote
+  * competitor name + numbers
+  * review gaps
+  * nearby facilities (count + distance)
+  * visibility/ranking differences
+
+* Make the gap obvious and painful
+
+---
+
+NO ENRICHMENT MODE RULES:
+
+* DO NOT invent data
+
+* Use high-probability industry problems:
+
+  Examples:
+
+  * missed calls not followed up
+  * reviews not being leveraged
+  * referrals not systemized
+  * competitors winning due to more reviews
+  * existing patients not reactivated
+
+* Use phrasing like:
+
+  * "typically"
+  * "usually"
+  * "what I see most often"
+
+* Keep it grounded in real business mechanics (not vague statements)
+
+* Still create tension and implied loss
+
+---
+
+OUTPUT FORMAT:
+
+Return ONLY valid JSON:
+
+{
+"subject": "...",
+"body": "...\n\n- Sidney"
+}

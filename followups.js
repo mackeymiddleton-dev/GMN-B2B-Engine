@@ -804,7 +804,8 @@ async function generateEmailMessage(contact, position, jobType, contactId) {
     });
     spend.track(contactId, model, response.usage);
 
-    const raw = response.content[0]?.text?.trim() || '';
+    const raw = (response.content[0]?.text || '').trim()
+      .replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
     const parsed = JSON.parse(raw);
     if (parsed.subject && parsed.body) return parsed;
     throw new Error('Missing subject or body in Claude response');
