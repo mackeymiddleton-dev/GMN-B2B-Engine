@@ -329,17 +329,21 @@ function runAnalysis() {
           bookingRate: p.count > 0 ? Math.round((p.bookings / p.count) * 100) : 0,
           sample_size: p.count,
           reply_count: p.replies,
-          // Email: confidence is based on actual reply count (reply signal matters more than volume)
-          //   low    = fewer than 10 replies  → still testing, don't inject
-          //   medium = 10–29 replies          → promising, lean toward it
-          //   high   = 30+ replies            → strong signal, default to this
-          // SMS: confidence based on send count (volume is the signal)
-          //   low    = <20 sends
-          //   medium = 20–49 sends
-          //   high   = 50+ sends
+          // Both channels use actual reply count as the confidence signal.
+          // Volume alone (sends) is not a performance indicator — replies are.
+          // SMS thresholds are set higher than email because SMS operates at
+          // greater volume and needs more reply signal before the pattern is reliable.
+          //
+          // Email: low = <10 replies  → don't inject (too little data)
+          //        medium = 10–29     → promising, lean toward it
+          //        high   = 30+       → strong signal, default to this
+          //
+          // SMS:   low = <20 replies  → don't inject (too little data)
+          //        medium = 20–49     → promising, lean toward it
+          //        high   = 50+       → strong signal, default to this
           confidence_level: channel === 'email'
             ? (p.replies >= 30 ? 'high' : p.replies >= 10 ? 'medium' : 'low')
-            : (p.count   >= 50 ? 'high' : p.count   >= 20 ? 'medium' : 'low')
+            : (p.replies >= 50 ? 'high' : p.replies >= 20 ? 'medium' : 'low')
         }))
         .sort((a, b) => b.replyRate - a.replyRate || b.bookingRate - a.bookingRate)
         .slice(0, 3);
@@ -429,7 +433,8 @@ function getStats() {
 /**
  * Returns a short text block to inject into the system prompt,
  * highlighting what's been working for this stage.
- * Only high and medium confidence patterns are included (low = <20 samples).
+ * Only high and medium confidence patterns are included.
+ * Low confidence = not enough actual replies yet (email: <10, SMS: <20).
  * @param {string} stage
  * @param {string} [channel] — 'sms_scripted' | 'sms_followups' | 'email'
  */
