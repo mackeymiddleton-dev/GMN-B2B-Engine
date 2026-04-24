@@ -73,8 +73,16 @@ function _loadFromJson() {
 
 function _dbUpsertContact(record) {
   const extra = {
-    researchData: record.researchData || null,
-    scanResults:  record.scanResults  || null
+    researchData:        record.researchData        || null,
+    scanResults:         record.scanResults         || null,
+    // Mid-conversation state that must survive server restarts so the
+    // deterministic Maps-confirmation handlers don't fall back to Claude
+    // and start re-asking earlier scripted questions.
+    confirmationPending: record.confirmationPending || null,
+    awaitingRetryName:   record.awaitingRetryName   || false,
+    practiceName:        record.practiceName        || null,
+    practiceStreet:      record.practiceStreet      || null,
+    practiceCity:        record.practiceCity        || null
   };
   pool.query(
     `INSERT INTO contacts

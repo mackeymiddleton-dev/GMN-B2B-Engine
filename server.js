@@ -873,8 +873,10 @@ async function handleInbound({ contactId, conversationId, messageBody, firstName
     return;
   }
 
-  // ── 4. Build message history from GHL + local ─────────────────────────────────
-  // Resolve conversationId if not present in webhook payload (e.g. some GHL event types)
+  // ── 4. Resolve conversationId and fetch full GHL history ──────────────────────
+  // We fetch GHL messages BEFORE the state check so we can recover lost
+  // mid-conversation flags (confirmationPending / awaitingRetryName) in case
+  // the in-memory state was wiped (server restart, fresh contact, etc.).
   let resolvedConvId = conversationId;
   if (!resolvedConvId && contactId) {
     try {
@@ -885,6 +887,21 @@ async function handleInbound({ contactId, conversationId, messageBody, firstName
     }
   }
 
+  let rawGhlMessages = [];
+  if (resolvedConvId) {
+    rawGhlMessages = await ghl.fetchMessages(resolvedConvId);
+  }
+
+  // ── 4.4. Recover lost state from GHL message history ──────────────────────────
+  // If the local in-memory state is missing the Maps-flow flags but the most
+  // recent outbound message shows we're mid-flow, restore the flags so the
+  // deterministic handler below picks them up instead of falling through to
+  // Claude (which would otherwise improvise a new question).
+  if (rawGhlMessages.length > 0) {
+    recoverStateFromHistory(contactId, fresh, rawGhlMessages);
+    fresh = conversations.get(contactId);
+  }
+
   // ── 4.5. Handle address confirmation or name-retry states (no Claude call) ────
   if (fresh?.confirmationPending) {
     return await handleConfirmationReply(contactId, messageBody, fresh, resolvedConvId);
@@ -893,11 +910,10 @@ async function handleInbound({ contactId, conversationId, messageBody, firstName
     return await handleRetryName(contactId, messageBody, fresh, resolvedConvId);
   }
 
-  // ── 4.6. Fetch full conversation from GHL (authoritative source) ──────────────
+  // ── 4.6. Build message history from GHL + local ───────────────────────────────
   let messages = [];
-  if (resolvedConvId) {
-    const ghlMessages = await ghl.fetchMessages(resolvedConvId);
-    messages = buildMessagesFromGhl(ghlMessages);
+  if (rawGhlMessages.length > 0) {
+    messages = buildMessagesFromGhl(rawGhlMessages);
   }
   if (messages.length === 0) {
     messages = buildMessagesFromLocal(fresh?.exchanges || []);
