@@ -1582,6 +1582,50 @@ app.post('/api/admin/backfill-variants', requireAdmin, (req, res) => {
   res.json({ ok: true, assigned, distribution: counts });
 });
 
+// ─── Admin: Variant Reset (one-time clean slate) ─────────────────────────────
+
+app.post('/api/admin/reset-variants', requireAdmin, async (req, res) => {
+  try {
+    // 1. Clear in-memory cache
+    const all = conversations.getAll();
+    let memCleared = 0;
+    for (const [contactId, c] of Object.entries(all)) {
+      if (c.variant) {
+        conversations.update(contactId, { variant: null });
+        memCleared++;
+      }
+    }
+
+    // 2. Clear variant on contacts in DB
+    const cResult = await _promptsPool.query('UPDATE contacts SET variant = NULL');
+    const bResult = await _promptsPool.query('UPDATE brain_messages SET variant = NULL');
+
+    // 3. Clear variantStats from winning_patterns
+    const wpRow = await _promptsPool.query("SELECT value FROM winning_patterns WHERE key = 'main'");
+    if (wpRow.rows.length > 0) {
+      let patterns = JSON.parse(wpRow.rows[0].value);
+      if (patterns.variantStats) {
+        delete patterns.variantStats;
+        await _promptsPool.query(
+          "UPDATE winning_patterns SET value = $1, updated_at = NOW() WHERE key = 'main'",
+          [JSON.stringify(patterns)]
+        );
+      }
+    }
+
+    console.log(`[Variants] Reset complete. Contacts cleared: ${cResult.rowCount}, Brain messages cleared: ${bResult.rowCount}`);
+    res.json({
+      ok: true,
+      contactsCleared: cResult.rowCount,
+      brainMessagesCleared: bResult.rowCount,
+      message: 'Variant assignments wiped. New contacts will be assigned variants from enrollment.'
+    });
+  } catch (err) {
+    console.error('[Variants] Reset failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── Admin: Variant Enable/Disable ────────────────────────────────────────────
 
 app.post('/admin/variants/:variant/enabled', requireAdmin, (req, res) => {
