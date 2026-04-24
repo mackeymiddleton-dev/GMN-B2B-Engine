@@ -1285,8 +1285,21 @@ app.post('/api/contacts/:contactId/reset-spend', requireAdmin, (req, res) => {
 // ─── Admin: Learning Brain ────────────────────────────────────────────────────
 
 app.get('/api/brain/stats', requireAdmin, (req, res) => {
-  const stats = brain.getStats();
-  const enrolledTotal = Object.keys(conversations.getAll()).length;
+  const days = parseInt(req.query.days, 10) || null;
+  const allContacts = conversations.getAll();
+
+  let enrolledIds = null;
+  let enrolledTotal;
+  if (days) {
+    const cutoff = Date.now() - days * 86400000;
+    const filtered = Object.values(allContacts).filter(c => (c.createdAt || 0) >= cutoff);
+    enrolledIds = new Set(filtered.map(c => c.contactId));
+    enrolledTotal = enrolledIds.size;
+  } else {
+    enrolledTotal = Object.keys(allContacts).length;
+  }
+
+  const stats = brain.getStats(enrolledIds);
   res.json({ ...stats, enrolledTotal });
 });
 
@@ -1837,6 +1850,12 @@ a{color:#818cf8;text-decoration:none}a:hover{text-decoration:underline}
 /* ── Stats strip ── */
 .stats-strip{max-width:980px;margin:0 auto 24px;display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px}
 .stat-card{background:#131316;border:1px solid #222;border-radius:12px;padding:16px;text-align:center}
+.funnel-header{max-width:980px;margin:0 auto 10px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.funnel-header .funnel-label{font-size:11px;color:#555;text-transform:uppercase;letter-spacing:.07em}
+.filter-pills{display:flex;gap:5px}
+.filter-pill{background:#131316;border:1px solid #2a2a2a;color:#666;border-radius:20px;padding:4px 12px;font-size:11px;cursor:pointer;transition:background .15s,color .15s,border-color .15s}
+.filter-pill:hover{border-color:#444;color:#aaa}
+.filter-pill.active{background:#6366f1;border-color:#6366f1;color:#fff}
 .stat-card .val{font-size:30px;font-weight:700;color:#fff;line-height:1.1}
 .stat-card .lbl{font-size:11px;color:#555;margin-top:5px;text-transform:uppercase;letter-spacing:.07em}
 .stat-card .sub{font-size:11px;color:#444;margin-top:3px}
@@ -1950,6 +1969,17 @@ tr:hover td{background:#18181c}
 
 <div class="refresh-bar"><span class="dot-live"></span>Auto-refreshes every 30s &nbsp;&bull;&nbsp; next refresh in <span id="countdown">30</span>s</div>
 
+<!-- ── Funnel Header ── -->
+<div class="funnel-header">
+  <span class="funnel-label">Funnel</span>
+  <div class="filter-pills">
+    <button class="filter-pill active" onclick="setDaysFilter(null,this)">All time</button>
+    <button class="filter-pill" onclick="setDaysFilter(30,this)">30d</button>
+    <button class="filter-pill" onclick="setDaysFilter(7,this)">7d</button>
+    <button class="filter-pill" onclick="setDaysFilter(3,this)">3d</button>
+  </div>
+</div>
+
 <!-- ── Funnel Strip ── -->
 <div class="stats-strip" id="stats-strip">
   <div class="stat-card"><div class="val" id="s-leads">—</div><div class="lbl">Total Leads</div><div class="sub">enrolled contacts</div></div>
@@ -2018,6 +2048,14 @@ const ADMIN_KEY = ${JSON.stringify(adminKey)};
 let currentTab = 'pending';
 let allJobs = [];
 let contactMap = {};
+let currentDays = null;
+
+function setDaysFilter(days, btn) {
+  currentDays = days;
+  document.querySelectorAll('.filter-pill').forEach(el => el.classList.remove('active'));
+  btn.classList.add('active');
+  loadBrain();
+}
 
 function escHtml(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -2294,7 +2332,8 @@ async function loadFollowups() {
 async function loadBrain() {
   const el = document.getElementById('brain-content');
   try {
-    const res = await fetch('/api/brain/stats', { headers: { 'x-admin-key': ADMIN_KEY } });
+    const statsUrl = '/api/brain/stats' + (currentDays ? '?days=' + currentDays : '');
+    const res = await fetch(statsUrl, { headers: { 'x-admin-key': ADMIN_KEY } });
     if (!res.ok) throw new Error(res.statusText);
     const data = await res.json();
     const t = data.totals || {};

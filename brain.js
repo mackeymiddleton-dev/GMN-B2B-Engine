@@ -436,12 +436,17 @@ function getWinningPatterns(stage, channel = 'sms_scripted') {
 /**
  * Return full stats summary (all stages + meta).
  */
-function getStats() {
+function getStats(contactIdFilter) {
   const messages = loadMessages();
   const patterns = loadPatterns();
 
-  const outbound = messages.filter(m => m.direction === 'outbound');
-  const inbound = messages.filter(m => m.direction === 'inbound');
+  // When a contactIdFilter Set is provided, restrict all calculations to that cohort
+  const msgs = contactIdFilter
+    ? messages.filter(m => contactIdFilter.has(m.contactId))
+    : messages;
+
+  const outbound = msgs.filter(m => m.direction === 'outbound');
+  const inbound = msgs.filter(m => m.direction === 'inbound');
 
   const settled = outbound.filter(m => m.repliedWithin48h !== null);
   const repliedMsgs = settled.filter(m => m.repliedWithin48h === true);
@@ -468,7 +473,7 @@ function getStats() {
       inbound:              inbound.length,
       settled:              settled.length,
       repliedMsgs:          repliedMsgs.length,
-      contacts:             new Set(messages.map(m => m.contactId)).size,
+      contacts:             new Set(msgs.map(m => m.contactId)).size,
       booked:               new Set(outbound.filter(m => m.booked).map(m => m.contactId)).size,
       contactsRepliedOnce:  contactsRepliedOnce,
       contactsReplied4Plus: contactsReplied4Plus
