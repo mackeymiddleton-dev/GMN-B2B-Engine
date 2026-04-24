@@ -446,6 +446,13 @@ function getStats() {
   const settled = outbound.filter(m => m.repliedWithin48h !== null);
   const repliedMsgs = settled.filter(m => m.repliedWithin48h === true);
 
+  const inboundByContact = {};
+  for (const m of inbound) {
+    inboundByContact[m.contactId] = (inboundByContact[m.contactId] || 0) + 1;
+  }
+  const contactsRepliedOnce  = Object.values(inboundByContact).filter(n => n >= 1).length;
+  const contactsReplied4Plus = Object.values(inboundByContact).filter(n => n >= 4).length;
+
   const byStage = {};
   for (const msg of outbound) {
     const stage = msg.stage || 'unknown';
@@ -457,12 +464,14 @@ function getStats() {
 
   return {
     totals: {
-      outbound:    outbound.length,
-      inbound:     inbound.length,
-      settled:     settled.length,
-      repliedMsgs: repliedMsgs.length,
-      contacts:    new Set(messages.map(m => m.contactId)).size,
-      booked:      new Set(outbound.filter(m => m.booked).map(m => m.contactId)).size
+      outbound:             outbound.length,
+      inbound:              inbound.length,
+      settled:              settled.length,
+      repliedMsgs:          repliedMsgs.length,
+      contacts:             new Set(messages.map(m => m.contactId)).size,
+      booked:               new Set(outbound.filter(m => m.booked).map(m => m.contactId)).size,
+      contactsRepliedOnce:  contactsRepliedOnce,
+      contactsReplied4Plus: contactsReplied4Plus
     },
     byStage,
     winningPatterns: patterns,

@@ -1,13 +1,13 @@
 {
   "sms_scripted": {
     "_meta": {
-      "analyzedAt": 1777012291057,
+      "analyzedAt": 1777012851842,
       "totalMessages": 2,
       "distinctContacts": 2
     }
   },
   "_meta": {
-    "analyzedAt": 1777012291057,
+    "analyzedAt": 1777012851842,
     "totalMessages": 2,
     "distinctContacts": 2
   },
@@ -20,7 +20,7 @@
       "replyRate": null,
       "booked": 0,
       "bookingRate": null,
-      "analyzedAt": 1777012291058
+      "analyzedAt": 1777012851842
     },
     {
       "variant": "B",
@@ -30,7 +30,7 @@
       "replyRate": null,
       "booked": 0,
       "bookingRate": null,
-      "analyzedAt": 1777012291058
+      "analyzedAt": 1777012851842
     },
     {
       "variant": "C",
@@ -40,11 +40,11 @@
       "replyRate": null,
       "booked": 0,
       "bookingRate": null,
-      "analyzedAt": 1777012291058
+      "analyzedAt": 1777012851842
     }
   ],
   "_qualitativeInsights": {
-    "text": "The data provided contains no usable statistics. All send counts are undefined and all reply and booking rates are null across every pattern cluster. Without actual performance numbers, I cannot identify which message approaches are working or failing, compare stage-by-stage conversion, or recommend specific changes based on evidence.\n\nTo generate actionable insights, I need complete data showing actual send volumes, reply percentages, and booking percentages for each message pattern. Please provide the full dataset with populated metrics.",
-    "generatedAt": 1777012295293
+    "text": "I cannot provide meaningful insights from this data because the statistics are incomplete. The sends are showing as undefined and both reply rates and booking rates are null across all patterns. Additionally, the message pattern content is showing only placeholder text (\"...\") rather than actual message examples.\n\nTo generate actionable coaching insights, I would need the actual message text for each pattern cluster, the number of sends per pattern, and valid percentage values for reply and booking rates. Please provide the complete dataset and I can identify which specific approaches are working and what changes the team should make.",
+    "generatedAt": 1777012856257
   }
 }

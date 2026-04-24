@@ -1285,7 +1285,9 @@ app.post('/api/contacts/:contactId/reset-spend', requireAdmin, (req, res) => {
 // ─── Admin: Learning Brain ────────────────────────────────────────────────────
 
 app.get('/api/brain/stats', requireAdmin, (req, res) => {
-  res.json(brain.getStats());
+  const stats = brain.getStats();
+  const enrolledTotal = conversations.getAll().length;
+  res.json({ ...stats, enrolledTotal });
 });
 
 app.post('/api/brain/analyze', requireAdmin, async (req, res) => {
@@ -1914,7 +1916,7 @@ tr:hover td{background:#18181c}
   .header-right{width:100%}
   .header-right .btn{flex:1;text-align:center;font-size:11px;padding:7px 8px}
   .refresh-bar{font-size:10px;margin-bottom:12px}
-  .stats-strip{grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}
+  .stats-strip{grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:14px}
   .stat-card{padding:10px 6px;border-radius:10px}
   .stat-card .val{font-size:20px}
   .stat-card .lbl{font-size:10px}
@@ -1950,11 +1952,10 @@ tr:hover td{background:#18181c}
 
 <!-- ── Stats Strip ── -->
 <div class="stats-strip" id="stats-strip">
-  <div class="stat-card"><div class="val" id="s-queued">—</div><div class="lbl">In Queue</div><div class="sub">messages pending</div></div>
-  <div class="stat-card"><div class="val" id="s-today" style="color:#f59e0b">—</div><div class="lbl">Sending Today</div><div class="sub">scheduled for today</div></div>
-  <div class="stat-card stat-highlight"><div class="val" id="s-sent">—</div><div class="lbl">Sent Total</div><div class="sub">all time</div></div>
-  <div class="stat-card"><div class="val" id="s-reply">—</div><div class="lbl">Reply Rate</div><div class="sub">replied within 48h</div></div>
-  <div class="stat-card"><div class="val" id="s-booked" style="color:#4ade80">—</div><div class="lbl">Booked</div><div class="sub">GHL appointments</div></div>
+  <div class="stat-card"><div class="val" id="s-leads">—</div><div class="lbl">Total Leads</div><div class="sub">enrolled contacts</div></div>
+  <div class="stat-card"><div class="val" id="s-replied-once">—</div><div class="lbl">Replied Once</div><div class="sub">% of total leads</div></div>
+  <div class="stat-card"><div class="val" id="s-replied-4">—</div><div class="lbl">4+ Replies</div><div class="sub">% of total leads</div></div>
+  <div class="stat-card stat-highlight"><div class="val" id="s-booked-rate" style="color:#4ade80">—</div><div class="lbl">Booking Rate</div><div class="sub">% of total leads</div></div>
 </div>
 
 <!-- ── Follow-Up Queue ── -->
@@ -2272,12 +2273,6 @@ async function loadFollowups() {
       contactMap = {};
       contacts.forEach(c => { contactMap[c.contactId] = c; });
     }
-    // Update queue stat cards
-    const now = Date.now();
-    const todayEnd = new Date(); todayEnd.setHours(23,59,59,999);
-    document.getElementById('s-queued').textContent = pending.length;
-    document.getElementById('s-today').textContent = pending.filter(j => j.sendAt && j.sendAt <= todayEnd.getTime()).length;
-    document.getElementById('s-sent').textContent = sent.length;
     renderQueue();
   } catch (err) {
     document.getElementById('followups-content').innerHTML = '<div class="empty">Failed to load queue: ' + escHtml(err.message) + '</div>';
@@ -2292,12 +2287,14 @@ async function loadBrain() {
     if (!res.ok) throw new Error(res.statusText);
     const data = await res.json();
     const t = data.totals || {};
-    const replyRate = t.settled > 0 ? Math.round((t.repliedMsgs / t.settled) * 100) : 0;
-    const bookedRate = t.contacts > 0 ? Math.round((t.booked / t.contacts) * 100) : 0;
+    const total = data.enrolledTotal || t.contacts || 0;
+    const pct = (n) => total > 0 ? Math.round(((n || 0) / total) * 100) + '%' : '—';
 
-    // Update stat cards
-    document.getElementById('s-reply').textContent = replyRate + '%';
-    document.getElementById('s-booked').textContent = t.booked || 0;
+    // Update funnel stat cards
+    document.getElementById('s-leads').textContent        = total || '—';
+    document.getElementById('s-replied-once').textContent = pct(t.contactsRepliedOnce);
+    document.getElementById('s-replied-4').textContent    = pct(t.contactsReplied4Plus);
+    document.getElementById('s-booked-rate').textContent  = pct(t.booked);
 
     function rateClass(r) { return r >= 30 ? 'rate-good' : r >= 10 ? 'rate-mid' : 'rate-low'; }
 
