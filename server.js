@@ -2003,16 +2003,24 @@ const _playgroundSessions = new Map(); // sessionId → { variant, firstName, ci
 const _PLAYGROUND_MAX_SESSIONS = 50;
 const _PLAYGROUND_SESSION_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
+function _evictPlaygroundSession(id) {
+  const s = _playgroundSessions.get(id);
+  if (s?.realScanKey) {
+    try { sessions.del(s.realScanKey); } catch {}
+  }
+  _playgroundSessions.delete(id);
+}
+
 function _gcPlaygroundSessions() {
   const cutoff = Date.now() - _PLAYGROUND_SESSION_TTL_MS;
   for (const [id, s] of _playgroundSessions) {
-    if ((s.lastActivityAt || s.createdAt) < cutoff) _playgroundSessions.delete(id);
+    if ((s.lastActivityAt || s.createdAt) < cutoff) _evictPlaygroundSession(id);
   }
   // Also cap total sessions
   if (_playgroundSessions.size > _PLAYGROUND_MAX_SESSIONS) {
     const sorted = [..._playgroundSessions.entries()].sort((a, b) => (a[1].lastActivityAt || a[1].createdAt) - (b[1].lastActivityAt || b[1].createdAt));
     const toRemove = sorted.slice(0, _playgroundSessions.size - _PLAYGROUND_MAX_SESSIONS);
-    for (const [id] of toRemove) _playgroundSessions.delete(id);
+    for (const [id] of toRemove) _evictPlaygroundSession(id);
   }
 }
 
@@ -2030,7 +2038,7 @@ app.get('/admin/playground', (req, res) => {
 app.post('/admin/playground/reset', requireAdmin, (req, res) => {
   const { sessionId } = req.body || {};
   if (!sessionId) return res.status(400).json({ error: 'sessionId required' });
-  _playgroundSessions.delete(sessionId);
+  _evictPlaygroundSession(sessionId);
   res.json({ ok: true });
 });
 
@@ -2089,6 +2097,7 @@ async function _playgroundLookupPractice(rawValue, session) {
   let confirmAddress = '';
   let placesHit = false;
 
+  let confirmPlaceId = null;
   if (apiKey) {
     try {
       const searchQuery = [practiceName, practiceStreet, practiceCity].filter(Boolean).join(' ');
@@ -2099,6 +2108,7 @@ async function _playgroundLookupPractice(rawValue, session) {
       if (topResult) {
         confirmName = topResult.name || practiceName;
         confirmAddress = topResult.formatted_address || topResult.vicinity || '';
+        confirmPlaceId = topResult.place_id || null;
         placesHit = true;
       }
     } catch (err) {
@@ -2114,7 +2124,7 @@ async function _playgroundLookupPractice(rawValue, session) {
   // a yes/no that production would never demand.
   if (!placesHit) return { skipConfirmation: true };
 
-  session.confirmationPending = { name: confirmName, address: confirmAddress, city: practiceCity };
+  session.confirmationPending = { name: confirmName, address: confirmAddress, city: practiceCity, placeId: confirmPlaceId };
   const confirmationMsg = confirmAddress
     ? `Found ${confirmName} at ${confirmAddress} — is that the right one?`
     : `Found ${confirmName} — is that the right one?`;
@@ -2154,6 +2164,127 @@ function _playgroundSeedScanData(session) {
     topCompetitor: competitorName,
     averageRankWhereVisible: 7
   };
+}
+
+// Fires the real research + scan pipeline for a playground session, mirroring
+// what production's startResearchAndScan does for a live contact. Namespaces
+// the underlying sessions-module key with a `pg_` prefix so tester traffic
+// can never collide with real GHL contact ids. Idempotent: a session that
+// already has a scan in flight or completed data short-circuits.
+function _playgroundFireRealScan(session) {
+  if (session.scanInFlight) return;
+  if (session.researchData && session.scanResults) return;
+
+  const playgroundKey = session.realScanKey
+    || `pg_${Math.random().toString(36).slice(2, 10)}_${Date.now()}`;
+  session.realScanKey = playgroundKey;
+
+  const practiceName = session.practiceName || 'Unknown';
+  const practiceCity = session.confirmationPending?.city || session.city || '';
+  const placeId = session.confirmationPending?.placeId || null;
+
+  console.log(`[Playground] Starting real scan for "${practiceName}" in ${practiceCity || 'unknown city'} (key=${playgroundKey}, placeId=${placeId || 'none'})`);
+
+  sessions.set(playgroundKey, {
+    sessionId: playgroundKey,
+    practiceName,
+    practiceStreet: '',
+    city: practiceCity,
+    researchStatus: 'idle',
+    scanStatus: 'idle',
+    researchData: null,
+    scanResults: null,
+    createdAt: Date.now()
+  });
+
+  const sessionObj = { sessionId: playgroundKey };
+
+  // Track real-pipeline outcomes separately from session.researchData /
+  // scanResults so that a later seed fallback (on timeout) can never
+  // retroactively flip scanStatus to 'complete'.
+  session.realResearchOk = false;
+  session.realScanOk = false;
+
+  const researchPromise = runResearch(sessionObj, practiceName, '', practiceCity, placeId)
+    .then(() => {
+      const s = sessions.get(playgroundKey);
+      if (s?.researchData) {
+        session.researchData = s.researchData;
+        session.realResearchOk = true;
+        console.log(`[Playground] Research complete for ${practiceName}: reviews=${s.researchData.reviews} rating=${s.researchData.rating} competitors=${(s.researchData.competitors || []).length}`);
+      } else {
+        console.warn(`[Playground] Research returned no data for ${practiceName}`);
+      }
+    })
+    .catch(err => console.error('[Playground] Research error:', err.message));
+
+  const scanPromise = startScan(sessionObj, practiceName, practiceCity, config.scanKeyword)
+    .then(() => {
+      const s = sessions.get(playgroundKey);
+      if (s?.scanResults) {
+        session.scanResults = s.scanResults;
+        session.realScanOk = true;
+        const top = s.scanResults.topCompetitor;
+        const topName = top && typeof top === 'object' ? top.name : top;
+        console.log(`[Playground] Scan complete for ${practiceName}: visibleTop3=${s.scanResults.visibleTop3} invisible=${s.scanResults.invisible}/${s.scanResults.totalPoints} top=${topName || 'n/a'}`);
+      } else {
+        console.warn(`[Playground] Scan returned no results for ${practiceName}`);
+      }
+    })
+    .catch(err => console.error('[Playground] Scan error:', err.message));
+
+  session.scanStatus = 'running';
+  const inFlight = Promise.all([researchPromise, scanPromise]).finally(() => {
+    // Only update status from this finally if the await side hasn't already
+    // detached us on timeout. Use a sentinel on the promise to know "is this
+    // still the current in-flight scan?" — if the await reassigned
+    // scanInFlight to null, leave its terminal status alone.
+    if (session.scanInFlight === inFlight) {
+      session.scanInFlight = null;
+      session.scanStatus = (session.realResearchOk && session.realScanOk) ? 'complete' : 'failed';
+    }
+    // Free the temporary sessions-module entry — tester scans don't need to
+    // outlive the request that fired them. The data we care about is already
+    // copied onto the playground session above.
+    try { sessions.del(playgroundKey); } catch {}
+  });
+  session.scanInFlight = inFlight;
+}
+
+// Awaits an in-flight playground scan with a hard timeout so a slow Google
+// Places call can never indefinitely block a Claude turn. On timeout or scan
+// failure, falls back to seed data so the conversation can still continue —
+// matches the live system's "no data → scripted language only" behavior.
+async function _playgroundAwaitScanIfRunning(session, timeoutMs = 30000) {
+  // Already have data of any kind — nothing to wait on.
+  if (session.researchData && session.scanResults) return;
+  // User flipped to Stub mid-flow — don't block on a stale real-scan promise;
+  // seed immediately so the conversation can continue.
+  if (session.useRealScan === false) {
+    _playgroundSeedScanData(session);
+    if (session.scanStatus !== 'failed') session.scanStatus = null;
+    return;
+  }
+  if (!session.scanInFlight) return;
+
+  const TIMEOUT = Symbol('scan-timeout');
+  const result = await Promise.race([
+    session.scanInFlight.then(() => null),
+    new Promise(resolve => setTimeout(() => resolve(TIMEOUT), timeoutMs))
+  ]);
+  if (result === TIMEOUT) {
+    console.warn(`[Playground] Scan await timed out after ${timeoutMs}ms — detaching and falling back to seed`);
+    // Detach so subsequent turns don't re-await this still-pending promise.
+    // The background promise will keep running but its .finally will see the
+    // ownership change and skip overwriting the failed status.
+    session.scanInFlight = null;
+    session.scanStatus = 'failed';
+  }
+  if (!session.researchData || !session.scanResults) {
+    console.log('[Playground] Real scan produced no data — using seed fallback so conversation can continue');
+    _playgroundSeedScanData(session);
+    session.scanStatus = 'failed';
+  }
 }
 
 function _extractPlaygroundMarkers(text, session) {
@@ -2209,7 +2340,7 @@ app.post('/admin/playground/message', requireAdmin, async (req, res) => {
   try {
     _gcPlaygroundSessions();
 
-    const { sessionId, message, variant, customPrompt, firstName, city } = req.body || {};
+    const { sessionId, message, variant, customPrompt, firstName, city, useRealScan } = req.body || {};
     if (!sessionId) return res.status(400).json({ error: 'sessionId required' });
     if (!message || typeof message !== 'string') return res.status(400).json({ error: 'message required' });
 
@@ -2232,6 +2363,7 @@ app.post('/admin/playground/message', requireAdmin, async (req, res) => {
         customPrompt: norm.customPrompt || '',
         firstName: (firstName || 'Test').trim() || 'Test',
         city: (city || '').trim(),
+        useRealScan: useRealScan !== false, // default true
         currentStep: 0,
         messages: [],
         createdAt: Date.now()
@@ -2249,6 +2381,7 @@ app.post('/admin/playground/message', requireAdmin, async (req, res) => {
       }
       if (firstName !== undefined) session.firstName = (firstName || 'Test').trim() || 'Test';
       if (city !== undefined) session.city = (city || '').trim();
+      if (useRealScan !== undefined) session.useRealScan = useRealScan !== false;
     }
     session.lastActivityAt = Date.now();
 
@@ -2277,11 +2410,20 @@ app.post('/admin/playground/message', requireAdmin, async (req, res) => {
           tokenUsage: { input: 0, output: 0 },
           elapsedMs: 0,
           estCost: 0,
+          scanStatus: session.scanStatus || null,
+          awaitingConfirmReply: false,
           systemPromptPreview: '(intercepted: confirmation denied)'
         });
       }
       if (_playgroundIsAffirmative(message)) {
-        _playgroundSeedScanData(session);
+        if (session.useRealScan) {
+          // Kick off the real research + scan pipeline. We don't await here
+          // — the await happens just before the Claude call below so the
+          // pipeline overlaps with prompt building / token accounting.
+          _playgroundFireRealScan(session);
+        } else {
+          _playgroundSeedScanData(session);
+        }
         session.confirmationPending = null;
         // Fall through to normal Claude call so it produces the data reveal.
       } else {
@@ -2298,6 +2440,9 @@ app.post('/admin/playground/message', requireAdmin, async (req, res) => {
           tokenUsage: { input: 0, output: 0 },
           elapsedMs: 0,
           estCost: 0,
+          scanStatus: session.scanStatus || null,
+          // Still waiting on a yes/no — keep the scan indicator armed.
+          awaitingConfirmReply: true,
           systemPromptPreview: '(intercepted: confirmation re-prompt)'
         });
       }
@@ -2320,12 +2465,26 @@ app.post('/admin/playground/message', requireAdmin, async (req, res) => {
           tokenUsage: { input: 0, output: 0 },
           elapsedMs: 0,
           estCost: 0,
+          scanStatus: session.scanStatus || null,
+          // Re-armed: a fresh confirmation just landed, the next user reply
+          // will trigger the real scan (when the toggle is on).
+          awaitingConfirmReply: true,
           systemPromptPreview: '(intercepted: retry confirmation)'
         });
       }
-      // Lookup missed — seed scan data and let Claude continue with reveal.
-      _playgroundSeedScanData(session);
+      // Lookup missed — fire the scan (or fall back to seed) and let Claude
+      // continue with the data reveal.
+      if (session.useRealScan) {
+        _playgroundFireRealScan(session);
+      } else {
+        _playgroundSeedScanData(session);
+      }
     }
+
+    // Block the Claude call until any in-flight real scan finishes. This
+    // gives prod-parity behavior: the data-reveal turn always sees real
+    // numbers (or seed fallback if the scan times out / fails).
+    await _playgroundAwaitScanIfRunning(session);
 
     // ── Build system prompt — mirrors the live handleInbound pipeline ──
     const systemContent = _buildPlaygroundSystemPrompt(session);
@@ -2383,14 +2542,20 @@ app.post('/admin/playground/message', requireAdmin, async (req, res) => {
           });
         } else if (lookup.skipConfirmation) {
           // No key, no result, or empty marker — match live flow which
-          // skips the confirmation step. Seed scan data so subsequent
+          // skips the confirmation step. Fire scan (or seed) so subsequent
           // turns can produce the data reveal.
-          _playgroundSeedScanData(session);
+          if (session.useRealScan) {
+            _playgroundFireRealScan(session);
+          } else {
+            _playgroundSeedScanData(session);
+          }
         }
       } catch (err) {
         console.error('[Playground] Confirmation simulation error:', err.message);
       }
     }
+
+    const awaitingConfirmReply = extraMessages.some(m => m.source === 'system_confirmation');
 
     res.json({
       ok: true,
@@ -2406,6 +2571,8 @@ app.post('/admin/playground/message', requireAdmin, async (req, res) => {
       },
       elapsedMs,
       estCost: _calcPlaygroundCost(response.usage),
+      scanStatus: session.scanStatus || null,
+      awaitingConfirmReply,
       systemPromptPreview: systemContent.slice(0, 500) + (systemContent.length > 500 ? '…' : '')
     });
   } catch (err) {
@@ -2422,18 +2589,22 @@ app.post('/admin/playground/start', requireAdmin, async (req, res) => {
   try {
     _gcPlaygroundSessions();
 
-    const { sessionId, variant, customPrompt, firstName, city } = req.body || {};
+    const { sessionId, variant, customPrompt, firstName, city, useRealScan } = req.body || {};
     if (!sessionId) return res.status(400).json({ error: 'sessionId required' });
 
     const norm = _normalizePlaygroundVariant(variant, customPrompt);
     if (norm.error) return res.status(400).json({ error: norm.error });
 
     // Always reset the session — Start represents a brand-new conversation.
+    // Evict any prior session under this id (and its real-scan side-data)
+    // so a fresh Start never inherits stale researchData / scanResults.
+    _evictPlaygroundSession(sessionId);
     const session = {
       variant: norm.variant,
       customPrompt: norm.customPrompt || '',
       firstName: (firstName || 'Test').trim() || 'Test',
       city: (city || '').trim(),
+      useRealScan: useRealScan !== false, // default true
       currentStep: 0,
       messages: [],
       createdAt: Date.now(),
@@ -4403,7 +4574,12 @@ h1{font-size:clamp(42px,7vw,74px);line-height:.95;font-weight:900;letter-spacing
 .vpill.active.B{background:linear-gradient(180deg,#fff7ed,#ffedd5);color:#92400e;border-color:#fdba74}
 .vpill.active.C{background:linear-gradient(180deg,#ecfdf5,#d1fae5);color:#065f46;border-color:#6ee7b7}
 .vpill.active.CUSTOM{background:linear-gradient(180deg,#f5f3ff,#ede9fe);color:#5b21b6;border-color:#c4b5fd}
+.vpill.scan.active.SCAN-REAL{background:linear-gradient(180deg,#ecfeff,#cffafe);color:#0e7490;border-color:#67e8f9}
+.vpill.scan.active.SCAN-STUB{background:linear-gradient(180deg,#fef9c3,#fef08a);color:#854d0e;border-color:#fde047}
 .vpill.disabled{opacity:.4;cursor:not-allowed;text-decoration:line-through}
+.bubble.scan-status{background:#fff7ed;border:1px dashed #fdba74;color:#92400e;font-style:italic}
+.bubble.scan-status.complete{background:#ecfdf5;border-color:#6ee7b7;color:#065f46;font-style:normal}
+.bubble.scan-status.failed{background:#fef2f2;border-color:#fca5a5;color:#991b1b;font-style:normal}
 .custom-prompt-row{padding:14px 20px;border-bottom:1px solid rgba(203,213,225,.7);background:rgba(245,243,255,.45);display:none}
 .custom-prompt-row.visible{display:block}
 .custom-prompt-row label{display:block;font-size:11px;color:#5b21b6;font-weight:800;letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px}
@@ -4472,6 +4648,13 @@ h1{font-size:clamp(42px,7vw,74px);line-height:.95;font-weight:900;letter-spacing
         </div>
       </div>
       <div class="control">
+        <label>Scan data</label>
+        <div class="variant-pills" title="Real scan runs the live Google Places research + 25-point grid scan against the prospect's confirmed listing (~$1 per practice, 10–20s). Stub uses fast synthetic numbers.">
+          <button class="vpill scan SCAN-REAL active" data-scan="real" onclick="pickScanMode('real')">Real scan</button>
+          <button class="vpill scan SCAN-STUB" data-scan="stub" onclick="pickScanMode('stub')">Stub</button>
+        </div>
+      </div>
+      <div class="control">
         <label>First Name</label>
         <input id="fname" type="text" value="Test" placeholder="Test"/>
       </div>
@@ -4527,6 +4710,16 @@ const ENABLED_VARIANTS = ${enabledJson};
 let SESSION_ID = 'pg-' + Math.random().toString(36).slice(2, 10) + '-' + Date.now();
 let VARIANT = 'A';
 let SENDING = false;
+// Real scan default; persisted to localStorage so the choice survives reloads.
+let USE_REAL_SCAN = true;
+try {
+  const stored = localStorage.getItem('pg_useRealScan');
+  if (stored === 'false') USE_REAL_SCAN = false;
+} catch {}
+// True after the system has just emitted an address-confirmation bubble. The
+// next user reply should trigger the real scan, so we swap the loading
+// indicator from "AI is typing…" to "Running visibility scan…".
+let AWAITING_CONFIRM_REPLY = false;
 
 document.querySelectorAll('.vpill').forEach(b => {
   const v = b.dataset.v;
@@ -4571,9 +4764,26 @@ function buildPayloadBase() {
     variant: VARIANT,
     customPrompt: VARIANT === 'CUSTOM' ? getCustomPrompt() : undefined,
     firstName: document.getElementById('fname').value,
-    city: document.getElementById('city').value
+    city: document.getElementById('city').value,
+    useRealScan: USE_REAL_SCAN
   };
 }
+
+function pickScanMode(mode) {
+  USE_REAL_SCAN = (mode === 'real');
+  try { localStorage.setItem('pg_useRealScan', USE_REAL_SCAN ? 'true' : 'false'); } catch {}
+  document.querySelectorAll('.vpill.scan').forEach(b => {
+    b.classList.toggle('active', b.dataset.scan === mode);
+  });
+}
+
+// Apply the persisted choice to the UI on load (after DOM is ready).
+function applyInitialScanMode() {
+  document.querySelectorAll('.vpill.scan').forEach(b => {
+    b.classList.toggle('active', b.dataset.scan === (USE_REAL_SCAN ? 'real' : 'stub'));
+  });
+}
+applyInitialScanMode();
 
 function validateCustomBeforeSend() {
   if (VARIANT === 'CUSTOM' && !getCustomPrompt().trim()) {
@@ -4643,8 +4853,20 @@ async function sendMsg() {
 
   hideStartCta();
   appendBubble('user', message);
-  const thinking = appendBubble('ai', 'AI is typing\u2026');
+  // When a confirmation bubble was just shown and Real scan is on, the
+  // server is about to (a) fire the live Google Places research + scan and
+  // (b) block this turn until that data lands. Surface that as a distinct
+  // status bubble so the user knows the long wait is the scan, not Claude.
+  const willScan = AWAITING_CONFIRM_REPLY && USE_REAL_SCAN;
+  let scanStatusBubble = null;
+  if (willScan) {
+    scanStatusBubble = appendBubble('ai', '\u23F3 Running visibility scan\u2026 (live Google Places research + 25-point grid, ~10\u201320s)');
+    scanStatusBubble.classList.add('scan-status');
+  }
+  const thinking = appendBubble('ai', willScan ? 'AI is composing the data reveal\u2026' : 'AI is typing\u2026');
   thinking.classList.add('thinking');
+  // Reset for next turn — the server's response will re-arm if needed.
+  AWAITING_CONFIRM_REPLY = false;
 
   try {
     const res = await fetch('/admin/playground/message?key=' + encodeURIComponent(ADMIN_KEY), {
@@ -4655,8 +4877,22 @@ async function sendMsg() {
     const data = await res.json();
     thinking.remove();
     if (!res.ok) {
+      if (scanStatusBubble) scanStatusBubble.remove();
       appendBubble('ai', '\u26A0 Error: ' + (data.error || res.statusText));
     } else {
+      // Update the scan-status bubble in place to reflect outcome.
+      if (scanStatusBubble) {
+        if (data.scanStatus === 'complete') {
+          scanStatusBubble.classList.add('complete');
+          scanStatusBubble.innerHTML = '\u2713 Visibility scan complete \u2014 real Google Maps numbers loaded.';
+        } else if (data.scanStatus === 'failed') {
+          scanStatusBubble.classList.add('failed');
+          scanStatusBubble.innerHTML = '\u26A0 Scan failed or timed out \u2014 falling back to seed numbers so the conversation can continue.';
+        } else {
+          // Toggle was switched mid-flow or no scan happened — drop the bubble.
+          scanStatusBubble.remove();
+        }
+      }
       const meta = 'Variant ' + data.variant + ' \u00B7 step ' + data.currentStep;
       appendBubble('ai', data.reply || '(empty reply)', meta);
       // Render any system-emitted follow-ups (e.g. address confirmation
@@ -4667,10 +4903,14 @@ async function sendMsg() {
           appendBubble('ai', extra.reply, extra.meta || 'system');
         }
       }
+      // Re-arm the scan indicator if the server says the next user reply
+      // will be a yes/no/correction on a confirmation bubble.
+      AWAITING_CONFIRM_REPLY = !!data.awaitingConfirmReply;
       applyResponseStats(data);
     }
   } catch (err) {
     thinking.remove();
+    if (scanStatusBubble) scanStatusBubble.remove();
     appendBubble('ai', '\u26A0 Network error: ' + err.message);
   } finally {
     SENDING = false;
@@ -4684,6 +4924,9 @@ async function startConvo() {
   if (!validateCustomBeforeSend()) return;
   const startBtn = document.getElementById('btn-start');
   SENDING = true;
+  // Brand-new conversation — clear any leftover scan-indicator armed state
+  // from a previous run in this tab.
+  AWAITING_CONFIRM_REPLY = false;
   if (startBtn) {
     startBtn.disabled = true;
     startBtn.textContent = 'Composing\u2026';
@@ -4753,6 +4996,9 @@ async function resetConvo() {
     });
   } catch {}
   SESSION_ID = 'pg-' + Math.random().toString(36).slice(2, 10) + '-' + Date.now();
+  // Drop any armed scan-indicator state — the next turn is on a fresh
+  // session and won't be a confirmation reply.
+  AWAITING_CONFIRM_REPLY = false;
   document.getElementById('messages').innerHTML =
     '<div class="empty-state" id="empty-state">Conversation reset. Type a message below or hit ▶ to have the AI open first.' +
     '<div class="start-cta">' +

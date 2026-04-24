@@ -14,8 +14,12 @@ function update(sessionId, updates) {
   return store[sessionId];
 }
 
+function del(sessionId) {
+  delete store[sessionId];
+}
+
 function getAll() {
   return store;
 }
 
-module.exports = { get, set, update, getAll };
+module.exports = { get, set, update, del, getAll };
