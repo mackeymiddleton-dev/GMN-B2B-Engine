@@ -1,9 +1,118 @@
 const fs = require('fs');
 const path = require('path');
+const { Pool } = require('pg');
 
 const MESSAGES_FILE = path.join(__dirname, 'data', 'messages.json');
 const PATTERNS_FILE = path.join(__dirname, 'data', 'winning-patterns.json');
 const REPLY_WINDOW_MS = 48 * 60 * 60 * 1000; // 48 hours
+
+// ─── DB pool ──────────────────────────────────────────────────────────────────
+const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+
+// ─── In-memory cache ──────────────────────────────────────────────────────────
+// Reads are always synchronous from here; writes go to cache + DB asynchronously.
+let _messagesCache = [];
+let _ready = false;
+
+// ─── DB bootstrap ─────────────────────────────────────────────────────────────
+
+function _rowToMsg(row) {
+  return {
+    id:                  row.id,
+    contactId:           row.contact_id,
+    direction:           row.direction,
+    body:                row.body,
+    stage:               row.stage,
+    step:                row.step,
+    message_type:        row.message_type,
+    position:            row.position,
+    had_enrichment_data: row.had_enrichment_data,
+    variant:             row.variant,
+    length_chars:        row.length_chars,
+    timestamp:           Number(row.timestamp),
+    repliedWithin48h:    row.replied_within_48h,
+    repliedAt:           row.replied_at !== null ? Number(row.replied_at) : null,
+    booked:              row.booked
+  };
+}
+
+async function initFromDb() {
+  try {
+    const { rows } = await pool.query('SELECT * FROM brain_messages ORDER BY timestamp ASC');
+    if (rows.length === 0) {
+      _migrateFromJson();
+    } else {
+      _messagesCache = rows.map(_rowToMsg);
+      console.log(`[Brain] DB loaded: ${_messagesCache.length} messages`);
+    }
+  } catch (err) {
+    console.error('[Brain] DB init error:', err.message, '— falling back to JSON');
+    _migrateFromJson();
+  }
+  _ready = true;
+}
+
+function _migrateFromJson() {
+  try {
+    if (!fs.existsSync(MESSAGES_FILE)) return;
+    const data = JSON.parse(fs.readFileSync(MESSAGES_FILE, 'utf8'));
+    if (!Array.isArray(data) || data.length === 0) return;
+    _messagesCache = data;
+    console.log(`[Brain] Migrating ${data.length} messages from JSON to DB`);
+    for (const msg of data) {
+      _dbInsertMessage(msg);
+    }
+  } catch (err) {
+    console.error('[Brain] JSON migration error:', err.message);
+  }
+}
+
+// ─── DB write helpers (fire-and-forget) ───────────────────────────────────────
+
+function _dbInsertMessage(msg) {
+  pool.query(
+    `INSERT INTO brain_messages
+       (id, contact_id, direction, body, stage, step, message_type, position,
+        had_enrichment_data, variant, length_chars, timestamp,
+        replied_within_48h, replied_at, booked)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+     ON CONFLICT (id) DO NOTHING`,
+    [
+      msg.id, msg.contactId, msg.direction, msg.body || null,
+      msg.stage || null, msg.step ?? null, msg.message_type || null,
+      msg.position ?? null, msg.had_enrichment_data ?? null,
+      msg.variant ?? null, msg.length_chars ?? null,
+      msg.timestamp, msg.repliedWithin48h ?? null,
+      msg.repliedAt ?? null, msg.booked || false
+    ]
+  ).catch(err => console.error('[Brain] DB insert error:', err.message));
+}
+
+function _dbUpdateMessage(id, updates) {
+  const fields = [];
+  const vals = [];
+  let idx = 1;
+  if ('repliedWithin48h' in updates) { fields.push(`replied_within_48h = $${idx++}`); vals.push(updates.repliedWithin48h); }
+  if ('repliedAt'        in updates) { fields.push(`replied_at = $${idx++}`);          vals.push(updates.repliedAt); }
+  if ('booked'           in updates) { fields.push(`booked = $${idx++}`);               vals.push(updates.booked); }
+  if ('message_type'     in updates) { fields.push(`message_type = $${idx++}`);         vals.push(updates.message_type); }
+  if ('position'         in updates) { fields.push(`position = $${idx++}`);             vals.push(updates.position); }
+  if ('had_enrichment_data' in updates) { fields.push(`had_enrichment_data = $${idx++}`); vals.push(updates.had_enrichment_data); }
+  if ('length_chars'     in updates) { fields.push(`length_chars = $${idx++}`);         vals.push(updates.length_chars); }
+  if (fields.length === 0) return;
+  vals.push(id);
+  pool.query(
+    `UPDATE brain_messages SET ${fields.join(', ')} WHERE id = $${idx}`,
+    vals
+  ).catch(err => console.error('[Brain] DB update error:', err.message));
+}
+
+function _dbUpdateBookingForContact(contactId) {
+  pool.query(
+    `UPDATE brain_messages SET booked = true WHERE contact_id = $1 AND direction = 'outbound'`,
+    [contactId]
+  ).catch(err => console.error('[Brain] DB booking update error:', err.message));
+}
 
 // Lazy-init Anthropic (avoids issues if env isn't loaded yet)
 let _ai = null;
@@ -41,21 +150,9 @@ function ensureDir() {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
+// Returns the current in-memory cache (sync). Replaces the old file-based loadMessages().
 function loadMessages() {
-  try {
-    ensureDir();
-    if (!fs.existsSync(MESSAGES_FILE)) return [];
-    return JSON.parse(fs.readFileSync(MESSAGES_FILE, 'utf8'));
-  } catch { return []; }
-}
-
-function saveMessages(messages) {
-  try {
-    ensureDir();
-    fs.writeFileSync(MESSAGES_FILE, JSON.stringify(messages, null, 2));
-  } catch (err) {
-    console.error('[Brain] Write error (messages):', err.message);
-  }
+  return _messagesCache;
 }
 
 function loadPatterns() {
@@ -112,11 +209,10 @@ function patternKey(body) {
  * @param {string|null} [meta.variant]       — A/B/C discovery script variant (null = legacy)
  */
 function recordOutbound(contactId, body, step, meta = {}) {
-  const messages = loadMessages();
   const stage = classifyStage(step);
   const message_type = meta.message_type ||
     (step !== null && step !== undefined ? 'scripted-sms' : 'followup-sms');
-  messages.push({
+  const msg = {
     id: makeId(),
     contactId,
     direction: 'outbound',
@@ -129,11 +225,12 @@ function recordOutbound(contactId, body, step, meta = {}) {
     variant: meta.variant ?? null,
     length_chars: (body || '').length,
     timestamp: Date.now(),
-    repliedWithin48h: null, // null = pending; true = replied ≤48h; false = no timely reply
+    repliedWithin48h: null,
     repliedAt: null,
     booked: false
-  });
-  saveMessages(messages);
+  };
+  _messagesCache.push(msg);
+  _dbInsertMessage(msg);
 }
 
 /**
@@ -144,9 +241,8 @@ function recordOutbound(contactId, body, step, meta = {}) {
  * @param {number|null} step  — current conversation step at time of receipt
  */
 function recordInbound(contactId, body, step) {
-  const messages = loadMessages();
   const stage = classifyStage(step);
-  messages.push({
+  const msg = {
     id: makeId(),
     contactId,
     direction: 'inbound',
@@ -157,8 +253,9 @@ function recordInbound(contactId, body, step) {
     repliedWithin48h: null,
     repliedAt: null,
     booked: false
-  });
-  saveMessages(messages);
+  };
+  _messagesCache.push(msg);
+  _dbInsertMessage(msg);
 }
 
 /**
@@ -167,14 +264,11 @@ function recordInbound(contactId, body, step) {
  * @param {string} contactId
  */
 function recordReply(contactId) {
-  const messages = loadMessages();
   const now = Date.now();
 
-  // Find the most recent outbound message for this contact that hasn't been replied to yet
-  // Use repliedAt === null (not repliedWithin48h) to prevent re-attributing late replies
   let lastOutboundIdx = -1;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i];
+  for (let i = _messagesCache.length - 1; i >= 0; i--) {
+    const m = _messagesCache[i];
     if (m.contactId === contactId && m.direction === 'outbound' && m.repliedAt === null) {
       lastOutboundIdx = i;
       break;
@@ -183,16 +277,12 @@ function recordReply(contactId) {
 
   if (lastOutboundIdx === -1) return;
 
-  const msg = messages[lastOutboundIdx];
+  const msg = _messagesCache[lastOutboundIdx];
   const withinWindow = now - msg.timestamp <= REPLY_WINDOW_MS;
+  const updates = { repliedWithin48h: withinWindow, repliedAt: now };
 
-  messages[lastOutboundIdx] = {
-    ...msg,
-    repliedWithin48h: withinWindow,
-    repliedAt: now
-  };
-
-  saveMessages(messages);
+  _messagesCache[lastOutboundIdx] = { ...msg, ...updates };
+  _dbUpdateMessage(msg.id, updates);
 }
 
 /**
@@ -200,15 +290,14 @@ function recordReply(contactId) {
  * @param {string} contactId
  */
 function recordBooking(contactId) {
-  const messages = loadMessages();
   let changed = false;
-  for (let i = 0; i < messages.length; i++) {
-    if (messages[i].contactId === contactId && messages[i].direction === 'outbound') {
-      messages[i].booked = true;
+  for (let i = 0; i < _messagesCache.length; i++) {
+    if (_messagesCache[i].contactId === contactId && _messagesCache[i].direction === 'outbound') {
+      _messagesCache[i] = { ..._messagesCache[i], booked: true };
       changed = true;
     }
   }
-  if (changed) saveMessages(messages);
+  if (changed) _dbUpdateBookingForContact(contactId);
 }
 
 // ─── Backfill ─────────────────────────────────────────────────────────────────
@@ -250,32 +339,42 @@ function backfillMessages(messages) {
  * @returns {object} The winning patterns object
  */
 function runAnalysis() {
-  let messages = loadMessages();
   const now = Date.now();
 
   // Settle any pending outbound messages older than 48h with no reply → mark false
-  let settled = false;
-  messages = messages.map(m => {
+  for (let i = 0; i < _messagesCache.length; i++) {
+    const m = _messagesCache[i];
     if (
       m.direction === 'outbound' &&
       m.repliedWithin48h === null &&
       m.repliedAt === null &&
       now - m.timestamp > REPLY_WINDOW_MS
     ) {
-      settled = true;
-      return { ...m, repliedWithin48h: false };
+      _messagesCache[i] = { ...m, repliedWithin48h: false };
+      _dbUpdateMessage(m.id, { repliedWithin48h: false });
     }
-    return m;
-  });
-  if (settled) saveMessages(messages);
+  }
 
   // Backfill any missing metadata fields on old records
-  const { messages: backfilled, changed } = backfillMessages(messages);
+  const { messages: backfilled, changed } = backfillMessages(_messagesCache);
   if (changed) {
-    messages = backfilled;
-    saveMessages(messages);
+    for (let i = 0; i < backfilled.length; i++) {
+      const orig = _messagesCache[i];
+      const updated = backfilled[i];
+      if (orig !== updated) {
+        _messagesCache[i] = updated;
+        const updates = {};
+        if (orig.message_type      !== updated.message_type)      updates.message_type      = updated.message_type;
+        if (orig.position          !== updated.position)          updates.position          = updated.position;
+        if (orig.had_enrichment_data !== updated.had_enrichment_data) updates.had_enrichment_data = updated.had_enrichment_data;
+        if (orig.length_chars      !== updated.length_chars)      updates.length_chars      = updated.length_chars;
+        if (Object.keys(updates).length > 0) _dbUpdateMessage(updated.id, updates);
+      }
+    }
     console.log('[Brain] Backfilled metadata fields on existing messages');
   }
+
+  let messages = _messagesCache;
 
   // Only count settled outbound messages (exclude null/pending) in analysis
   const outbound = messages.filter(m => m.direction === 'outbound' && m.repliedWithin48h !== null);
@@ -681,6 +780,9 @@ function startScheduledAnalysis() {
   console.log('[Brain] Scheduled analysis every 72h');
 }
 
+// Kick off DB load immediately — store the promise so callers can await readiness
+const _initPromise = initFromDb();
+
 module.exports = {
   classifyStage,
   recordInbound,
@@ -693,5 +795,7 @@ module.exports = {
   buildWinningPatternsPrompt,
   getStats,
   getVariantStats,
-  startScheduledAnalysis
+  startScheduledAnalysis,
+  initFromDb,
+  whenReady: () => _initPromise
 };
