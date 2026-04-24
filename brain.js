@@ -38,34 +38,112 @@ function _rowToMsg(row) {
 
 async function initFromDb() {
   try {
+    // Auto-create the table — safe to run on every startup (idempotent)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS brain_messages (
+        id                  TEXT    PRIMARY KEY,
+        contact_id          TEXT    NOT NULL,
+        direction           TEXT    NOT NULL,
+        body                TEXT,
+        stage               TEXT,
+        step                INTEGER,
+        message_type        TEXT,
+        position            INTEGER,
+        had_enrichment_data BOOLEAN,
+        variant             TEXT,
+        length_chars        INTEGER,
+        timestamp           BIGINT  NOT NULL,
+        replied_within_48h  BOOLEAN,
+        replied_at          BIGINT,
+        booked              BOOLEAN NOT NULL DEFAULT false
+      )
+    `);
+
     const { rows } = await pool.query('SELECT * FROM brain_messages ORDER BY timestamp ASC');
     if (rows.length === 0) {
-      _migrateFromJson();
+      // Try JSON migration first (legacy path), then fall back to exchange backfill
+      const jsonOk = _migrateFromJson();
+      if (!jsonOk) {
+        await _backfillFromExchanges();
+      }
     } else {
       _messagesCache = rows.map(_rowToMsg);
       console.log(`[Brain] DB loaded: ${_messagesCache.length} messages`);
     }
   } catch (err) {
-    console.error('[Brain] DB init error:', err.message, '— falling back to JSON');
-    _migrateFromJson();
+    console.error('[Brain] DB init error:', err.message);
   }
   // Restore winning patterns from DB if the local file is missing (e.g. after redeploy)
   await _restorePatternsFromDb();
   _ready = true;
 }
 
+// Returns true if messages were loaded from the JSON file, false otherwise
 function _migrateFromJson() {
   try {
-    if (!fs.existsSync(MESSAGES_FILE)) return;
+    if (!fs.existsSync(MESSAGES_FILE)) return false;
     const data = JSON.parse(fs.readFileSync(MESSAGES_FILE, 'utf8'));
-    if (!Array.isArray(data) || data.length === 0) return;
+    if (!Array.isArray(data) || data.length === 0) return false;
     _messagesCache = data;
     console.log(`[Brain] Migrating ${data.length} messages from JSON to DB`);
     for (const msg of data) {
       _dbInsertMessage(msg);
     }
+    return true;
   } catch (err) {
     console.error('[Brain] JSON migration error:', err.message);
+    return false;
+  }
+}
+
+// Reconstruct brain_messages from the exchanges table when brain_messages is empty.
+// Computes replied_within_48h by checking for an inbound exchange within 48h of each
+// outbound exchange from the same contact. Booking status is taken from contacts.booked.
+async function _backfillFromExchanges() {
+  try {
+    const { rows: inserted } = await pool.query(`
+      WITH first_reply AS (
+        SELECT
+          o.id   AS outbound_id,
+          MIN(i.ts)::bigint AS replied_at
+        FROM exchanges o
+        JOIN exchanges i
+          ON  i.contact_id = o.contact_id
+          AND i.direction  = 'inbound'
+          AND i.ts > o.ts
+          AND i.ts <= o.ts + 172800000
+        WHERE o.direction = 'outbound'
+        GROUP BY o.id
+      )
+      INSERT INTO brain_messages
+        (id, contact_id, direction, body, step, length_chars, timestamp,
+         variant, booked, replied_within_48h, replied_at)
+      SELECT
+        'bk-' || e.id::text,
+        e.contact_id,
+        e.direction,
+        e.content,
+        e.step,
+        LENGTH(COALESCE(e.content, '')),
+        e.ts::bigint,
+        COALESCE(e.extra->>'variant', c.variant),
+        CASE WHEN e.direction = 'outbound' THEN COALESCE(c.booked, false) ELSE false END,
+        CASE WHEN e.direction = 'outbound' THEN (fr.replied_at IS NOT NULL)  ELSE NULL END,
+        fr.replied_at
+      FROM exchanges e
+      LEFT JOIN contacts c ON c.contact_id = e.contact_id
+      LEFT JOIN first_reply fr ON fr.outbound_id = e.id
+      ON CONFLICT (id) DO NOTHING
+      RETURNING id
+    `);
+
+    if (inserted.length > 0) {
+      const { rows } = await pool.query('SELECT * FROM brain_messages ORDER BY timestamp ASC');
+      _messagesCache = rows.map(_rowToMsg);
+      console.log(`[Brain] Backfilled ${inserted.length} messages from exchanges table`);
+    }
+  } catch (err) {
+    console.error('[Brain] Exchange backfill error:', err.message);
   }
 }
 
