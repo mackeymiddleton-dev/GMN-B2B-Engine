@@ -137,13 +137,13 @@ function scheduleStep3AutoSend(contactId, resolvedConvId, skipReplyGuard = false
       conversations.addExchange(contactId, {
         direction: 'outbound',
         body: STEP3_TEXT,
-        step: 3,
+        step: 4,
         conversationId: resolvedConvId || null,
         variant: conversations.get(contactId)?.variant || null
       });
-      brain.recordOutbound(contactId, STEP3_TEXT, 3, { variant: conversations.get(contactId)?.variant || null });
-      conversations.update(contactId, { currentStep: 3 });
-      followups.scheduleSilenceCheck(contactId, 3, STEP3_TEXT);
+      brain.recordOutbound(contactId, STEP3_TEXT, 4, { variant: conversations.get(contactId)?.variant || null });
+      conversations.update(contactId, { currentStep: 4 });
+      followups.scheduleSilenceCheck(contactId, 4, STEP3_TEXT);
       console.log(`[Step3Auto] Step 3 sent to ${contactId} (research ${researchDone ? 'complete' : 'timed out'})`);
 
       // Watch for scan completion → send visibility follow-up
@@ -182,7 +182,7 @@ function watchForScanAndSendVisibility(contactId, resolvedConvId) {
     const contact = conversations.get(contactId);
 
     // Stop if booked or prospect already replied to Step 3 (moved to Step 4+)
-    if (!contact || contact.booked || (contact.currentStep !== undefined && contact.currentStep > 3)) {
+    if (!contact || contact.booked || (contact.currentStep !== undefined && contact.currentStep > 4)) {
       clearInterval(handle);
       pendingScanWatch.delete(contactId);
       return;
@@ -206,7 +206,7 @@ function watchForScanAndSendVisibility(contactId, resolvedConvId) {
 
     // Also abort if prospect replied while we were polling
     const exch    = contact.exchanges || [];
-    const lastOut = [...exch].reverse().find(e => e.direction === 'outbound' && e.step === 3);
+    const lastOut = [...exch].reverse().find(e => e.direction === 'outbound' && e.step === 4);
     const lastIn  = [...exch].reverse().find(e => e.direction === 'inbound');
     if (lastIn && lastOut && lastIn.timestamp > lastOut.timestamp) {
       console.log(`[ScanWatch] ${contactId} already replied to Step 3 — skipping visibility message`);
@@ -230,7 +230,7 @@ function clearScanWatch(contactId) {
 
 async function sendScanVisibilityMessage(contactId, resolvedConvId, sr) {
   const contact = conversations.get(contactId);
-  if (!contact || contact.booked || contact.currentStep > 3) return;
+  if (!contact || contact.booked || contact.currentStep > 4) return;
 
   const competitor   = sr?.topCompetitor?.name;
   const visibleTop3  = sr?.visibleTop3  ?? 0;
@@ -250,11 +250,11 @@ async function sendScanVisibilityMessage(contactId, resolvedConvId, sr) {
     conversations.addExchange(contactId, {
       direction: 'outbound',
       body: msg,
-      step: 3,
+      step: 4,
       conversationId: resolvedConvId || null,
       variant: conversations.get(contactId)?.variant || null
     });
-    brain.recordOutbound(contactId, msg, 3, { variant: conversations.get(contactId)?.variant || null });
+    brain.recordOutbound(contactId, msg, 4, { variant: conversations.get(contactId)?.variant || null });
     console.log(`[ScanWatch] Visibility follow-up sent to ${contactId}`);
   } catch (err) {
     console.error(`[ScanWatch] Failed to send visibility message for ${contactId}:`, err.message);
@@ -796,11 +796,11 @@ function recoverStateFromHistory(contactId, fresh, rawGhlMessages) {
   // Recover currentStep from known scripted text patterns
   if (!fresh?.currentStep || fresh.currentStep === 0) {
     if (bodyLower.includes('i pulled up') && bodyLower.includes('while we were talking')) {
-      updates.currentStep = 3;
-    } else if (bodyLower.includes('sid, our founder')) {
       updates.currentStep = 4;
-    } else if (bodyLower.includes('locked in') && bodyLower.includes('calendar invite')) {
+    } else if (bodyLower.includes('sid, our founder')) {
       updates.currentStep = 5;
+    } else if (bodyLower.includes('locked in') && bodyLower.includes('calendar invite')) {
+      updates.currentStep = 6;
     }
     if (updates.currentStep) {
       console.log(`[StateRecovery] Restored currentStep ${updates.currentStep} for ${contactId}`);
@@ -1072,12 +1072,12 @@ async function handleInbound({ contactId, conversationId, messageBody, firstName
       conversations.addExchange(contactId, {
         direction: 'outbound',
         body: confirmationMsg,
-        step: 3,
+        step: 4,
         conversationId: resolvedConvId || null,
         variant: contactVariant
       });
-      brain.recordOutbound(contactId, confirmationMsg, 3, { variant: contactVariant });
-      followups.scheduleSilenceCheck(contactId, 3, confirmationMsg);
+      brain.recordOutbound(contactId, confirmationMsg, 4, { variant: contactVariant });
+      followups.scheduleSilenceCheck(contactId, 4, confirmationMsg);
       console.log(`[Webhook] Sent address confirmation to ${contactId}: "${confirmationMsg.slice(0, 80)}"`);
     } catch (err) {
       console.error('[Webhook] Failed to send confirmation — falling back to auto Step 3:', err.message);
@@ -1132,9 +1132,9 @@ async function handleConfirmationReply(contactId, messageBody, contact, resolved
     conversations.update(contactId, { confirmationPending: null, awaitingRetryName: true });
     const clarification = "No problem — what's the exact name as it appears on Google Maps, and what street is it on?";
     await ghl.sendMessage(contactId, clarification);
-    conversations.addExchange(contactId, { direction: 'outbound', body: clarification, step: 3, conversationId: resolvedConvId || null, variant: contact.variant || null });
-    brain.recordOutbound(contactId, clarification, 3, { variant: contact.variant || null });
-    followups.scheduleSilenceCheck(contactId, 3, clarification);
+    conversations.addExchange(contactId, { direction: 'outbound', body: clarification, step: 4, conversationId: resolvedConvId || null, variant: contact.variant || null });
+    brain.recordOutbound(contactId, clarification, 4, { variant: contact.variant || null });
+    followups.scheduleSilenceCheck(contactId, 4, clarification);
     console.log(`[Webhook] Confirmation denied for ${contactId} — asking for correction`);
     return;
   }
@@ -1144,9 +1144,9 @@ async function handleConfirmationReply(contactId, messageBody, contact, resolved
   if (!isYes) {
     const reprompt = "Just want to make sure — is that your practice listing? Reply yes or no.";
     await ghl.sendMessage(contactId, reprompt);
-    conversations.addExchange(contactId, { direction: 'outbound', body: reprompt, step: 3, conversationId: resolvedConvId || null, variant: contact.variant || null });
-    brain.recordOutbound(contactId, reprompt, 3, { variant: contact.variant || null });
-    followups.scheduleSilenceCheck(contactId, 3, reprompt);
+    conversations.addExchange(contactId, { direction: 'outbound', body: reprompt, step: 4, conversationId: resolvedConvId || null, variant: contact.variant || null });
+    brain.recordOutbound(contactId, reprompt, 4, { variant: contact.variant || null });
+    followups.scheduleSilenceCheck(contactId, 4, reprompt);
     return;
   }
 
@@ -1180,9 +1180,9 @@ async function handleRetryName(contactId, messageBody, contact, resolvedConvId) 
         });
         const confirmMsg = `Found ${confirmName} at ${confirmAddress} — is that the right one?`;
         await ghl.sendMessage(contactId, confirmMsg);
-        conversations.addExchange(contactId, { direction: 'outbound', body: confirmMsg, step: 3, conversationId: resolvedConvId || null, variant: contact.variant || null });
-        brain.recordOutbound(contactId, confirmMsg, 3, { variant: contact.variant || null });
-        followups.scheduleSilenceCheck(contactId, 3, confirmMsg);
+        conversations.addExchange(contactId, { direction: 'outbound', body: confirmMsg, step: 4, conversationId: resolvedConvId || null, variant: contact.variant || null });
+        brain.recordOutbound(contactId, confirmMsg, 4, { variant: contact.variant || null });
+        followups.scheduleSilenceCheck(contactId, 4, confirmMsg);
         console.log(`[Webhook] Retry confirmation sent to ${contactId}: ${confirmName}`);
         return;
       }
