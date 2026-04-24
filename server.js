@@ -1601,14 +1601,14 @@ app.post('/api/admin/reset-variants', requireAdmin, async (req, res) => {
     const bResult = await _promptsPool.query('UPDATE brain_messages SET variant = NULL');
 
     // 3. Clear variantStats from winning_patterns
-    const wpRow = await _promptsPool.query("SELECT value FROM winning_patterns WHERE key = 'main'");
+    const wpRow = await _promptsPool.query("SELECT data FROM winning_patterns WHERE key = 'main'");
     if (wpRow.rows.length > 0) {
-      let patterns = JSON.parse(wpRow.rows[0].value);
+      let patterns = JSON.parse(wpRow.rows[0].data);
       if (patterns.variantStats) {
         delete patterns.variantStats;
         await _promptsPool.query(
-          "UPDATE winning_patterns SET value = $1, updated_at = NOW() WHERE key = 'main'",
-          [JSON.stringify(patterns)]
+          "UPDATE winning_patterns SET data = $1, updated_at = $2 WHERE key = 'main'",
+          [JSON.stringify(patterns), Date.now()]
         );
       }
     }
