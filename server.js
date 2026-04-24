@@ -2493,9 +2493,6 @@ async function loadBrain() {
     const t = data.totals || {};
     const total = data.enrolledTotal || t.contacts || 0;
     const pct = (n) => total > 0 ? Math.round(((n || 0) / total) * 100) + '%' : '—';
-    const replyRate  = t.settled > 0 ? Math.round((t.repliedMsgs / t.settled) * 100) : 0;
-    const bookedRate = total > 0 ? Math.round(((t.booked || 0) / total) * 100) : 0;
-
     // Update funnel stat cards
     document.getElementById('s-leads').textContent        = total || '—';
     document.getElementById('s-replied-once').textContent = pct(t.contactsRepliedOnce);
@@ -2582,14 +2579,6 @@ async function loadBrain() {
     } catch (_) { /* variant stats are supplemental — ignore errors */ }
 
     el.innerHTML = \`
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px">
-        <div class="stat-card"><div class="val">\${t.contacts || 0}</div><div class="lbl">Enrolled</div><div class="sub">contacts in AI sequence</div></div>
-        <div class="stat-card"><div class="val">\${t.outbound || 0}</div><div class="lbl">Sent</div><div class="sub">total outbound SMS/email</div></div>
-        <div class="stat-card"><div class="val">\${t.inbound || 0}</div><div class="lbl">Replied</div><div class="sub">inbound responses</div></div>
-        <div class="stat-card stat-highlight"><div class="val">\${replyRate}%</div><div class="lbl">Reply Rate</div><div class="sub">replies ÷ messages sent</div></div>
-        <div class="stat-card"><div class="val" style="color:#4ade80">\${t.booked || 0}</div><div class="lbl">Booked</div><div class="sub">zoom calls confirmed</div></div>
-        <div class="stat-card"><div class="val" style="color:#4ade80">\${bookedRate}%</div><div class="lbl">Booking Rate</div><div class="sub">booked ÷ enrolled</div></div>
-      </div>
       \${stageHtml}
       \${variantRows}
     \`;
