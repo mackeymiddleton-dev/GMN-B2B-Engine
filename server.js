@@ -1284,7 +1284,7 @@ app.post('/api/contacts/:contactId/reset-spend', requireAdmin, (req, res) => {
 
 // ─── Admin: Learning Brain ────────────────────────────────────────────────────
 
-app.get('/api/brain/stats', requireAdmin, (req, res) => {
+app.get('/api/brain/stats', requireAdmin, async (req, res) => {
   const days = parseInt(req.query.days, 10) || null;
   const allContacts = conversations.getAll();
 
@@ -1300,7 +1300,35 @@ app.get('/api/brain/stats', requireAdmin, (req, res) => {
   }
 
   const stats = brain.getStats(enrolledIds);
-  res.json({ ...stats, enrolledTotal });
+
+  // Fetch week-over-week snapshot delta (most recent vs ~7 days ago)
+  let snapshotDelta = null;
+  try {
+    const snapResult = await _promptsPool.query(
+      `SELECT * FROM funnel_snapshots ORDER BY taken_at DESC LIMIT 1`
+    );
+    const weekAgoResult = await _promptsPool.query(
+      `SELECT * FROM funnel_snapshots WHERE taken_at <= NOW() - INTERVAL '6 days' ORDER BY taken_at DESC LIMIT 1`
+    );
+    if (snapResult.rows.length && weekAgoResult.rows.length) {
+      const cur = snapResult.rows[0];
+      const old = weekAgoResult.rows[0];
+      snapshotDelta = {
+        leads:       (cur.total_leads        - old.total_leads),
+        repliedOnce: (parseFloat(cur.replied_once_pct)  - parseFloat(old.replied_once_pct)),
+        replied4:    (parseFloat(cur.replied_4plus_pct) - parseFloat(old.replied_4plus_pct)),
+        bookingRate: (parseFloat(cur.booking_rate_pct)  - parseFloat(old.booking_rate_pct)),
+        comparedAt:  old.taken_at
+      };
+    }
+  } catch (err) {
+    // Silently skip only when the table does not exist yet (first boot before migration)
+    if (!err.message.includes('funnel_snapshots')) {
+      console.error('[Stats] Snapshot delta query error:', err.message);
+    }
+  }
+
+  res.json({ ...stats, enrolledTotal, snapshotDelta });
 });
 
 app.post('/api/brain/analyze', requireAdmin, async (req, res) => {
@@ -1689,6 +1717,49 @@ async function bootstrapStateFromGHL() {
   console.log(`[Bootstrap] Done — ${ok}/${active.length} contact(s) restored`);
 }
 
+// ─── Funnel Snapshot ──────────────────────────────────────────────────────────
+// Captures the current 4 funnel metrics and writes one row to funnel_snapshots.
+// Called once on startup (so there is always at least one data point) and then
+// every 24 hours.  The /api/brain/stats handler reads the most recent row plus
+// a row from ≥6 days ago to compute week-over-week deltas.
+
+async function takeFunnelSnapshot() {
+  try {
+    const allContacts = conversations.getAll();
+    const total = Object.keys(allContacts).length;
+    if (total === 0) {
+      console.log('[Snapshot] No contacts yet — skipping snapshot');
+      return;
+    }
+
+    // Guard against duplicate rows when the server restarts multiple times
+    // in a short window — only record one snapshot per 12-hour period.
+    const recentCheck = await _promptsPool.query(
+      `SELECT id FROM funnel_snapshots WHERE taken_at > NOW() - INTERVAL '12 hours' LIMIT 1`
+    );
+    if (recentCheck.rows.length > 0) {
+      console.log('[Snapshot] Recent snapshot exists (<12h ago) — skipping duplicate');
+      return;
+    }
+
+    const stats = brain.getStats(null);
+    const t = stats.totals || {};
+    const pct = (n) => total > 0 ? Math.round(((n || 0) / total) * 100) : 0;
+    const repliedOncePct  = pct(t.contactsRepliedOnce);
+    const replied4plusPct = pct(t.contactsReplied4Plus);
+    const bookingRatePct  = pct(t.booked);
+
+    await _promptsPool.query(
+      `INSERT INTO funnel_snapshots (taken_at, total_leads, replied_once_pct, replied_4plus_pct, booking_rate_pct)
+       VALUES (NOW(), $1, $2, $3, $4)`,
+      [total, repliedOncePct, replied4plusPct, bookingRatePct]
+    );
+    console.log(`[Snapshot] Recorded — leads:${total} repliedOnce:${repliedOncePct}% replied4+:${replied4plusPct}% booked:${bookingRatePct}%`);
+  } catch (err) {
+    console.error('[Snapshot] Failed to record funnel snapshot:', err.message);
+  }
+}
+
 app.listen(PORT, () => {
   console.log(`Powered Up AI — GMB Message Generator running on port ${PORT}`);
 
@@ -1696,6 +1767,25 @@ app.listen(PORT, () => {
   _promptsPool.query(`ALTER TABLE contacts ADD COLUMN IF NOT EXISTS variant varchar(1)`)
     .then(() => console.log('[DB] contacts.variant column ensured'))
     .catch(err => console.error('[DB] contacts.variant migration error:', err.message));
+
+  // ── Funnel snapshot table ──────────────────────────────────────────────────
+  _promptsPool.query(`
+    CREATE TABLE IF NOT EXISTS funnel_snapshots (
+      id SERIAL PRIMARY KEY,
+      taken_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      total_leads INT NOT NULL,
+      replied_once_pct NUMERIC(6,2) NOT NULL,
+      replied_4plus_pct NUMERIC(6,2) NOT NULL,
+      booking_rate_pct NUMERIC(6,2) NOT NULL
+    )
+  `)
+    .then(() => {
+      console.log('[DB] funnel_snapshots table ensured');
+      // Take an initial snapshot on startup then every 24 hours
+      takeFunnelSnapshot();
+      setInterval(takeFunnelSnapshot, 24 * 60 * 60 * 1000);
+    })
+    .catch(err => console.error('[DB] funnel_snapshots migration error:', err.message));
 
   prompts.seed();
   // Sync prompts from DB into local file on every startup — this ensures
@@ -1859,6 +1949,10 @@ a{color:#818cf8;text-decoration:none}a:hover{text-decoration:underline}
 .stat-card .val{font-size:30px;font-weight:700;color:#fff;line-height:1.1}
 .stat-card .lbl{font-size:11px;color:#555;margin-top:5px;text-transform:uppercase;letter-spacing:.07em}
 .stat-card .sub{font-size:11px;color:#444;margin-top:3px}
+.stat-card .delta{font-size:11px;margin-top:5px;font-weight:600;letter-spacing:.02em}
+.stat-card .delta.up{color:#4ade80}
+.stat-card .delta.down{color:#f87171}
+.stat-card .delta.flat{color:#555}
 .stat-highlight .val{color:#818cf8}
 
 /* ── Panel ── */
@@ -1982,10 +2076,10 @@ tr:hover td{background:#18181c}
 
 <!-- ── Funnel Strip ── -->
 <div class="stats-strip" id="stats-strip">
-  <div class="stat-card"><div class="val" id="s-leads">—</div><div class="lbl">Total Leads</div><div class="sub">enrolled contacts</div></div>
-  <div class="stat-card"><div class="val" id="s-replied-once">—</div><div class="lbl">Replied Once</div><div class="sub">% of total leads</div></div>
-  <div class="stat-card"><div class="val" id="s-replied-4">—</div><div class="lbl">4+ Replies</div><div class="sub">% of total leads</div></div>
-  <div class="stat-card stat-highlight"><div class="val" id="s-booked-rate" style="color:#4ade80">—</div><div class="lbl">Booking Rate</div><div class="sub">% of total leads</div></div>
+  <div class="stat-card"><div class="val" id="s-leads">—</div><div class="lbl">Total Leads</div><div class="sub">enrolled contacts</div><div class="delta flat" id="d-leads"></div></div>
+  <div class="stat-card"><div class="val" id="s-replied-once">—</div><div class="lbl">Replied Once</div><div class="sub">% of total leads</div><div class="delta flat" id="d-replied-once"></div></div>
+  <div class="stat-card"><div class="val" id="s-replied-4">—</div><div class="lbl">4+ Replies</div><div class="sub">% of total leads</div><div class="delta flat" id="d-replied-4"></div></div>
+  <div class="stat-card stat-highlight"><div class="val" id="s-booked-rate" style="color:#4ade80">—</div><div class="lbl">Booking Rate</div><div class="sub">% of total leads</div><div class="delta flat" id="d-booked-rate"></div></div>
 </div>
 
 <!-- ── Queue Ops Strip ── -->
@@ -2347,6 +2441,30 @@ async function loadBrain() {
     document.getElementById('s-replied-once').textContent = pct(t.contactsRepliedOnce);
     document.getElementById('s-replied-4').textContent    = pct(t.contactsReplied4Plus);
     document.getElementById('s-booked-rate').textContent  = pct(t.booked);
+
+    // Week-over-week delta badges
+    function applyDelta(elId, diff, isCount) {
+      const el = document.getElementById(elId);
+      if (!el) return;
+      if (diff === null || diff === undefined || isNaN(diff)) { el.textContent = ''; return; }
+      const sign = diff > 0 ? '+' : '';
+      const label = isCount ? \`\${sign}\${diff} vs last wk\` : \`\${sign}\${Math.round(diff)}pp vs last wk\`;
+      el.textContent = label;
+      el.className = 'delta ' + (diff > 0 ? 'up' : diff < 0 ? 'down' : 'flat');
+    }
+    // Only show deltas on the "all time" view — snapshot data is global so the
+    // delta would be misleading when a date filter is active.
+    const sd = (!currentDays && data.snapshotDelta) ? data.snapshotDelta : null;
+    ['d-leads','d-replied-once','d-replied-4','d-booked-rate'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el && !sd) { el.textContent = ''; el.className = 'delta flat'; }
+    });
+    if (sd) {
+      applyDelta('d-leads',       sd.leads,       true);
+      applyDelta('d-replied-once', sd.repliedOnce, false);
+      applyDelta('d-replied-4',    sd.replied4,    false);
+      applyDelta('d-booked-rate',  sd.bookingRate, false);
+    }
 
     function rateClass(r) { return r >= 30 ? 'rate-good' : r >= 10 ? 'rate-mid' : 'rate-low'; }
 
