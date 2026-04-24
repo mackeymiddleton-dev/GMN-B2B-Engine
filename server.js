@@ -1406,6 +1406,48 @@ app.post('/api/admin/cancel-sms-jobs', requireAdmin, (req, res) => {
   res.json({ ok: true, cancelled });
 });
 
+app.post('/api/admin/backfill-bookings', requireAdmin, async (req, res) => {
+  const CALENDAR_IDS = [
+    'TEJPVxOMR0rrTwxgavfc','lLa9R176JhNHeXrmyhc4','xadAGwKudYEsVjbEYR0n',
+    'MyGuztNviyIdbDNs1Ob3','ZvP8hfJ2Xr5Srit8aLA7','bZbSTcLeFll9JYTrjYnN',
+    '81R5ud9u96dv67Ni56yS','sseQg8YjNlyg5T66AjOV'
+  ];
+  const ghlHeaders = {
+    'Authorization': `Bearer ${process.env.GHL_API_KEY}`,
+    'Version': '2021-04-15'
+  };
+
+  const bookedContactIds = new Set();
+  for (const calId of CALENDAR_IDS) {
+    try {
+      const r = await fetch(
+        `https://services.leadconnectorhq.com/calendars/events?calendarId=${calId}&locationId=${process.env.GHL_LOCATION_ID}&startTime=1704067200000&endTime=1798761600000`,
+        { headers: ghlHeaders }
+      );
+      if (!r.ok) continue;
+      const data = await r.json();
+      for (const ev of data.events || []) {
+        if (ev.contactId && ev.appointmentStatus !== 'cancelled') {
+          bookedContactIds.add(ev.contactId);
+        }
+      }
+    } catch (_) {}
+  }
+
+  const results = { booked: [], alreadyBooked: [], notInSystem: [] };
+  for (const contactId of bookedContactIds) {
+    const contact = conversations.get(contactId);
+    if (!contact) { results.notInSystem.push(contactId); continue; }
+    if (contact.booked) { results.alreadyBooked.push({ contactId, firstName: contact.firstName }); continue; }
+    conversations.update(contactId, { booked: true });
+    brain.recordBooking(contactId);
+    results.booked.push({ contactId, firstName: contact.firstName });
+    console.log(`[BackfillBookings] Marked ${contact.firstName} (${contactId}) as booked`);
+  }
+
+  res.json({ ok: true, ...results });
+});
+
 // ─── Admin: Opt-Out Blocklist ──────────────────────────────────────────────────
 
 app.get('/api/optouts', requireAdmin, async (req, res) => {
@@ -1944,6 +1986,7 @@ tr:hover td{background:#18181c}
   <div id="followups-content"><div class="loading">Loading&hellip;</div></div>
   <div style="margin-top:12px;border-top:1px solid #2a2a2a;padding-top:12px;display:flex;align-items:center;gap:12px">
     <button id="pause-btn" onclick="togglePause()" style="background:#3a1a1a;color:#f87171;border:1px solid #5a2d2d;padding:8px 20px;border-radius:6px;cursor:pointer;font-size:14px;font-weight:600">⏸ Pause Everything</button>
+    <button onclick="syncBookings(this)" style="background:#1a2a3a;color:#60a5fa;border:1px solid #2d4a5a;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600">↻ Sync Bookings from GHL</button>
     <span id="rebuild-status" style="font-size:12px;color:#888"></span>
   </div>
 </div>
@@ -2177,6 +2220,28 @@ async function cancelAllSms() {
     loadFollowups();
   } catch (err) {
     status.textContent = 'Error: ' + err.message;
+  }
+}
+
+async function syncBookings(btn) {
+  const status = document.getElementById('rebuild-status');
+  btn.disabled = true;
+  status.textContent = 'Checking GHL calendars…';
+  try {
+    const res = await fetch('/api/admin/backfill-bookings', { method: 'POST', headers: { 'x-admin-key': ADMIN_KEY } });
+    const data = await res.json();
+    const n = data.booked?.length || 0;
+    const already = data.alreadyBooked?.length || 0;
+    status.textContent = n > 0
+      ? n + ' contact(s) marked booked: ' + data.booked.map(c => c.firstName).join(', ')
+      : already > 0
+        ? 'All matched contacts already booked (' + already + ')'
+        : 'No enrolled contacts found with GHL appointments';
+    if (n > 0) loadBrain();
+  } catch (err) {
+    status.textContent = 'Error: ' + err.message;
+  } finally {
+    btn.disabled = false;
   }
 }
 

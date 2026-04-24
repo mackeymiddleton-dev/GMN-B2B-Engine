@@ -1,13 +1,13 @@
 {
   "sms_scripted": {
     "_meta": {
-      "analyzedAt": 1777011640144,
+      "analyzedAt": 1777012291057,
       "totalMessages": 2,
       "distinctContacts": 2
     }
   },
   "_meta": {
-    "analyzedAt": 1777011640144,
+    "analyzedAt": 1777012291057,
     "totalMessages": 2,
     "distinctContacts": 2
   },
@@ -20,7 +20,7 @@
       "replyRate": null,
       "booked": 0,
       "bookingRate": null,
-      "analyzedAt": 1777011640144
+      "analyzedAt": 1777012291058
     },
     {
       "variant": "B",
@@ -30,7 +30,7 @@
       "replyRate": null,
       "booked": 0,
       "bookingRate": null,
-      "analyzedAt": 1777011640144
+      "analyzedAt": 1777012291058
     },
     {
       "variant": "C",
@@ -40,11 +40,11 @@
       "replyRate": null,
       "booked": 0,
       "bookingRate": null,
-      "analyzedAt": 1777011640144
+      "analyzedAt": 1777012291058
     }
   ],
   "_qualitativeInsights": {
-    "text": "I cannot provide meaningful insights from this data because the performance metrics are incomplete. The send counts show as \"undefined\" and both reply rates and booking rates display as \"null%\" across all pattern clusters.\n\nTo generate actionable coaching insights, I need actual numeric data showing how many messages were sent per pattern and what percentage resulted in replies and bookings. Please re-run the data export or check the source system to ensure the metrics are properly populated, then share the updated statistics.",
-    "generatedAt": 1777011644194
+    "text": "The data provided contains no usable statistics. All send counts are undefined and all reply and booking rates are null across every pattern cluster. Without actual performance numbers, I cannot identify which message approaches are working or failing, compare stage-by-stage conversion, or recommend specific changes based on evidence.\n\nTo generate actionable insights, I need complete data showing actual send volumes, reply percentages, and booking percentages for each message pattern. Please provide the full dataset with populated metrics.",
+    "generatedAt": 1777012295293
   }
 }
