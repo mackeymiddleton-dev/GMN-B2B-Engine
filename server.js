@@ -4735,7 +4735,12 @@ let AWAITING_CONFIRM_REPLY = false;
 // 'failed') can update it in place instead of leaving stale text on screen.
 let ACTIVE_SCAN_BUBBLE = null;
 
-document.querySelectorAll('.vpill').forEach(b => {
+// Scope to actual variant pills — without [data-v], this selector also
+// matched the Real-scan / Stub pills (which share the .vpill class for
+// styling), and since they have no data-v attribute, they would all get
+// flagged as "disabled" and made non-interactive. The result was the user
+// could never click "Stub". Constrain to variant pills only.
+document.querySelectorAll('.vpill[data-v]').forEach(b => {
   const v = b.dataset.v;
   // Custom is always available — it doesn't depend on stored prompts.
   if (v === 'CUSTOM') return;
