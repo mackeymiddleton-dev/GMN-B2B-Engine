@@ -1602,22 +1602,38 @@ app.post('/admin/variants/:variant/enabled', requireAdmin, (req, res) => {
 
 app.get('/api/brain/variants', requireAdmin, (req, res) => {
   try {
-    const stats = brain.getVariantStats();
     const enabledList = prompts.getEnabledVariants();
-
-    // Count true assigned contacts from contacts.variant (source of truth)
     const allContacts = conversations.getAll();
-    const assignedCounts = { A: 0, B: 0, C: 0 };
+
+    const counts = { A: { assigned: 0, repliedOnce: 0, replied4: 0, booked: 0 },
+                     B: { assigned: 0, repliedOnce: 0, replied4: 0, booked: 0 },
+                     C: { assigned: 0, repliedOnce: 0, replied4: 0, booked: 0 } };
+
     for (const c of Object.values(allContacts)) {
-      if (c.variant && assignedCounts[c.variant] !== undefined) assignedCounts[c.variant]++;
+      if (!c.variant || !counts[c.variant]) continue;
+      const vc = counts[c.variant];
+      vc.assigned++;
+      const inbound = (c.exchanges || []).filter(e => e.direction === 'inbound').length;
+      if (inbound >= 1) vc.repliedOnce++;
+      if (inbound >= 4) vc.replied4++;
+      if (c.booked) vc.booked++;
     }
 
-    const result = stats.map(s => ({
-      ...s,
-      contactsAssigned: assignedCounts[s.variant] || 0,
-      enabled: enabledList.includes(s.variant)
-    }));
-    res.json({ ok: true, variants: result });
+    const pct = (n, d) => d > 0 ? Math.round((n / d) * 100) : null;
+
+    const variants = ['A', 'B', 'C'].map(v => {
+      const vc = counts[v];
+      return {
+        variant:          v,
+        enabled:          enabledList.includes(v),
+        contactsAssigned: vc.assigned,
+        repliedOncePct:   pct(vc.repliedOnce, vc.assigned),
+        replied4Pct:      pct(vc.replied4,    vc.assigned),
+        bookingRatePct:   pct(vc.booked,      vc.assigned)
+      };
+    });
+
+    res.json({ ok: true, variants });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -2489,10 +2505,10 @@ async function loadBrain() {
       const vRes = await fetch('/api/brain/variants', { headers: { 'x-admin-key': ADMIN_KEY } });
       if (vRes.ok) {
         const vData = await vRes.json();
-        if (vData.variants && vData.variants.some(v => v.sent > 0)) {
-          function vRatePill(r) {
-            if (r === null) return '<span style="color:#555">—</span>';
-            const col = r >= 30 ? '#22c55e' : r >= 15 ? '#f59e0b' : '#6b7280';
+        if (vData.variants) {
+          function vPct(r) {
+            if (r === null || r === undefined) return '<span style="color:#555">—</span>';
+            const col = r >= 30 ? '#22c55e' : r >= 10 ? '#f59e0b' : '#6b7280';
             return \`<span style="font-weight:600;color:\${col}">\${r}%</span>\`;
           }
           const variantColors = { A: '#748ffc', B: '#f59e0b', C: '#34d399' };
@@ -2501,7 +2517,7 @@ async function loadBrain() {
               <div style="font-size:12px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.06em;margin-bottom:14px">A/B/C Script Variant Performance</div>
               <div class="table-wrap"><table class="perf-table">
                 <thead><tr>
-                  <th>Variant</th><th>Enabled</th><th>Contacts</th><th>Sent</th><th>Replied</th><th>Reply %</th><th>Booked</th><th>Book %</th>
+                  <th>Variant</th><th>Enabled</th><th>Contacts</th><th>Replied Once</th><th>4+ Replies</th><th>Booking Rate</th>
                 </tr></thead>
                 <tbody>\${vData.variants.map(v => {
                   const col = variantColors[v.variant] || '#aaa';
@@ -2509,18 +2525,14 @@ async function loadBrain() {
                     <td><span style="font-weight:700;color:\${col}">Variant \${v.variant}</span></td>
                     <td><span style="\${v.enabled ? 'color:#22c55e' : 'color:#555'};font-weight:600">\${v.enabled ? 'Yes' : 'No'}</span></td>
                     <td>\${v.contactsAssigned}</td>
-                    <td>\${v.sent}</td>
-                    <td>\${v.replied}</td>
-                    <td>\${vRatePill(v.replyRate)}</td>
-                    <td>\${v.booked}</td>
-                    <td>\${vRatePill(v.bookingRate)}</td>
+                    <td>\${vPct(v.repliedOncePct)}</td>
+                    <td>\${vPct(v.replied4Pct)}</td>
+                    <td>\${vPct(v.bookingRatePct)}</td>
                   </tr>\`;
                 }).join('')}</tbody>
               </table></div>
-              <div style="font-size:11px;color:#3a3a3a;margin-top:10px">Only settled scripted-SMS messages (reply window closed). Edit scripts at <a href="/admin/prompts?key=\${ADMIN_KEY}" style="color:#818cf8">Prompt Editor</a>.</div>
+              <div style="font-size:11px;color:#3a3a3a;margin-top:10px">All percentages are of total contacts assigned to each variant. Edit scripts at <a href="/admin/prompts?key=\${ADMIN_KEY}" style="color:#818cf8">Prompt Editor</a>.</div>
             </div>\`;
-        } else {
-          variantRows = \`<div style="margin-top:24px;border-top:1px solid #1e1e1e;padding-top:20px"><div style="font-size:12px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">A/B/C Script Variant Performance</div><div style="font-size:13px;color:#444">No variant messages settled yet. Stats appear once reply windows close.</div></div>\`;
         }
       }
     } catch (_) { /* variant stats are supplemental — ignore errors */ }
