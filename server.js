@@ -1193,7 +1193,7 @@ async function handleConfirmationReply(contactId, messageBody, contact, resolved
   }
 
   // Require explicit affirmative — ambiguous replies re-prompt so Step 3 stays held
-  const isYes = /^(yes|yeah|yep|yup|correct|right|that('s| is)( it| right| the one)?|sure|exactly|affirmative|ok(ay)?|y)\b/.test(msg);
+  const isYes = /^(yes|yea|yeah|yep|yup|ya|ye|correct|right|that('s| is)( it| right| the one| us| ours| mine)?|thats (it|right|correct|us|ours)|sure|exactly|affirmative|absolutely|definitely|for sure|sounds (right|good|correct)|looks (right|good|correct)|ok(ay)?|y|100)\b/.test(msg);
   if (!isYes) {
     const reprompt = "Just want to make sure — is that your practice listing? Reply yes or no.";
     await ghl.sendMessage(contactId, reprompt);
@@ -2191,7 +2191,7 @@ async function _playgroundLookupPractice(rawValue, session) {
 function _playgroundIsAffirmative(text) {
   const t = String(text || '').trim().toLowerCase();
   if (!t) return false;
-  return /^(yes|yeah|yep|yup|correct|right|that('s| is)( it| right| the one)?|sure|exactly|affirmative|ok(ay)?|y)\b/.test(t);
+  return /^(yes|yea|yeah|yep|yup|ya|ye|correct|right|that('s| is)( it| right| the one| us| ours| mine)?|thats (it|right|correct|us|ours)|sure|exactly|affirmative|absolutely|definitely|for sure|sounds (right|good|correct)|looks (right|good|correct)|ok(ay)?|y|100)\b/.test(t);
 }
 function _playgroundIsNegative(text) {
   const t = String(text || '').trim().toLowerCase();
