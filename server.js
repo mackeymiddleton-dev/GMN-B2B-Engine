@@ -2258,11 +2258,19 @@ function _playgroundFireRealScan(session) {
 async function _playgroundAwaitScanIfRunning(session, timeoutMs = 30000) {
   // Already have data of any kind — nothing to wait on.
   if (session.researchData && session.scanResults) return;
-  // User flipped to Stub mid-flow — don't block on a stale real-scan promise;
-  // seed immediately so the conversation can continue.
+  // STUB mode: do NOT pre-seed. Stub seeding happens on the same paths the
+  // production flow uses — affirmative confirmation (line ~2430) and the
+  // retry-name lookup-miss fallback (line ~2485). The only case where we
+  // need to seed here is if a real scan was in flight and the user flipped
+  // the Stub toggle mid-flow — then we drop the in-flight promise and seed
+  // so the conversation can continue. Otherwise just return and let the
+  // confirmation-path seeding handle it.
   if (session.useRealScan === false) {
-    _playgroundSeedScanData(session);
-    if (session.scanStatus !== 'failed') session.scanStatus = null;
+    if (session.scanInFlight) {
+      _playgroundSeedScanData(session);
+      if (session.scanStatus !== 'failed') session.scanStatus = null;
+      session.scanInFlight = null;
+    }
     return;
   }
   if (!session.scanInFlight) return;
