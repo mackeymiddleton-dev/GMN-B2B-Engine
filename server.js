@@ -2877,6 +2877,12 @@ function renderVariantSection() {
         <div style="font-size:13px;font-weight:700;color:#fff;margin-bottom:12px">Performance Comparison</div>
         <div id="variant-stats-table"><span style="font-size:13px;color:#555">Loading stats\u2026</span></div>
       </div>
+      <div style="margin-top:24px;border-top:1px solid #2a2a2a;padding-top:20px">
+        <div style="font-size:12px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Data Reset</div>
+        <div style="font-size:13px;color:#555;margin-bottom:14px">Wipe all variant assignments and start tracking from scratch. Everything else (contacts, replies, bookings, follow-ups) is kept.</div>
+        <button class="btn" style="background:#3a1a1a;color:#ef4444;border:1px solid #5a2222;font-size:13px" onclick="resetVariantData()">Reset Variant Data</button>
+        <span id="variant-reset-status" style="margin-left:12px;font-size:13px;color:#555"></span>
+      </div>
     </div>
   \`;
 
@@ -2968,12 +2974,10 @@ async function loadVariantStats() {
     const data = await res.json();
     if (!res.ok || !data.variants) { el.innerHTML = '<span style="font-size:13px;color:#555">No variant data yet.</span>'; return; }
     const vv = data.variants;
-    const noData = vv.every(v => v.sent === 0);
-    if (noData) { el.innerHTML = '<span style="font-size:13px;color:#555">No variant messages sent yet. Stats will appear here once contacts start being assigned.</span>'; return; }
 
     function ratePill(rate) {
-      if (rate === null) return '<span style="color:#555">—</span>';
-      const cls = rate >= 30 ? 'rate-high' : rate >= 15 ? 'rate-mid' : 'rate-low';
+      if (rate === null || rate === undefined) return '<span style="color:#555">—</span>';
+      const cls = rate >= 30 ? 'rate-high' : rate >= 10 ? 'rate-mid' : 'rate-low';
       return \`<span class="rate-pill \${cls}">\${rate}%</span>\`;
     }
 
@@ -2981,20 +2985,39 @@ async function loadVariantStats() {
       <td><span class="vs-badge vs-badge-\${v.variant}">\${v.variant}</span></td>
       <td><span class="\${v.enabled?'vs-enabled':'vs-disabled'}">\${v.enabled?'Yes':'No'}</span></td>
       <td>\${v.contactsAssigned}</td>
-      <td>\${v.sent}</td>
-      <td>\${ratePill(v.replyRate)}</td>
-      <td>\${v.booked}</td>
-      <td>\${ratePill(v.bookingRate)}</td>
+      <td>\${ratePill(v.repliedOncePct)}</td>
+      <td>\${ratePill(v.replied4Pct)}</td>
+      <td>\${ratePill(v.bookingRatePct)}</td>
     </tr>\`).join('');
 
     el.innerHTML = \`<table class="variant-stats-table">
       <thead><tr>
-        <th>Variant</th><th>Enabled</th><th>Contacts</th><th>Msgs Sent</th><th>Reply Rate</th><th>Booked</th><th>Book Rate</th>
+        <th>Variant</th><th>Enabled</th><th>Contacts</th><th>Replied Once</th><th>4+ Replies</th><th>Booking Rate</th>
       </tr></thead>
       <tbody>\${rows}</tbody>
     </table>\`;
   } catch(err) {
     el.innerHTML = '<span style="font-size:13px;color:#ef4444">Failed to load stats: ' + err.message + '</span>';
+  }
+}
+
+async function resetVariantData() {
+  const statusEl = document.getElementById('variant-reset-status');
+  if (!confirm('This will wipe all variant assignments from every contact and start fresh.\\n\\nEverything else (contacts, replies, bookings, follow-ups) stays intact.\\n\\nContinue?')) return;
+  statusEl.textContent = 'Resetting\u2026';
+  try {
+    const res = await fetch('/api/admin/reset-variants', {
+      method: 'POST',
+      headers: { 'x-admin-key': ADMIN_KEY }
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    statusEl.style.color = '#22c55e';
+    statusEl.textContent = \`Done — \${data.contactsCleared} contacts cleared. New leads will be assigned fresh.\`;
+    loadVariantStats();
+  } catch (err) {
+    statusEl.style.color = '#ef4444';
+    statusEl.textContent = 'Error: ' + err.message;
   }
 }
 
