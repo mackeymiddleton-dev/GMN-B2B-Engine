@@ -2050,7 +2050,110 @@ function _buildPlaygroundSystemPrompt(session) {
   const stage = brain.classifyStage(session.currentStep);
   const winningSnippet = brain.buildWinningPatternsPrompt(stage, 'sms_scripted');
   if (winningSnippet) systemContent += winningSnippet;
+
+  // Mirror production: once the practice has been confirmed, attach synthetic
+  // research + scan data so the AI can produce an authentic data-reveal turn.
+  // Real production data comes from Google Places + an internal scan; the
+  // playground uses plausible stub values so testers can exercise the flow
+  // end-to-end without burning real API quota.
+  if (session.researchData) {
+    systemContent += `\n\nLIVE RESEARCH DATA:\n${JSON.stringify(session.researchData, null, 2)}`;
+  }
+  if (session.scanResults) {
+    systemContent += `\n\nSCAN RESULTS:\n${JSON.stringify(session.scanResults, null, 2)}`;
+  }
   return systemContent;
+}
+
+// Mirror production's PRACTICE_DETECTED handler for the playground. Returns
+// either:
+//   { confirmationMsg }                   → emit confirmation, await yes/no
+//   { skipConfirmation: true }            → no name/key/result; behave like
+//                                           live flow which skips the
+//                                           confirmation step and proceeds
+// Either way, sets practiceName/confirmationPending on the session so the
+// next reply can be routed correctly.
+async function _playgroundLookupPractice(rawValue, session) {
+  const parts = String(rawValue || '').split('|').map(s => s.trim());
+  const practiceName = parts[0] || '';
+  const practiceStreet = parts[1] || '';
+  const practiceCity = parts[2] || session.city || '';
+
+  // Defensive: a marker with no usable name should not produce a
+  // malformed "Found  at ..." bubble. Mirror live flow's "no result"
+  // branch and skip confirmation entirely.
+  if (!practiceName) return { skipConfirmation: true };
+
+  const apiKey = process.env.GOOGLE_PLACES_KEY;
+  let confirmName = practiceName;
+  let confirmAddress = '';
+  let placesHit = false;
+
+  if (apiKey) {
+    try {
+      const searchQuery = [practiceName, practiceStreet, practiceCity].filter(Boolean).join(' ');
+      const placesUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(searchQuery)}&key=${apiKey}`;
+      const placesRes = await fetch(placesUrl);
+      const placesData = await placesRes.json();
+      const topResult = (placesData.results || [])[0];
+      if (topResult) {
+        confirmName = topResult.name || practiceName;
+        confirmAddress = topResult.formatted_address || topResult.vicinity || '';
+        placesHit = true;
+      }
+    } catch (err) {
+      console.error('[Playground] Places lookup error:', err.message);
+    }
+  }
+
+  session.practiceName = confirmName;
+
+  // Live behavior: when the lookup misses (no key or no result), the
+  // server skips the confirmation step and lets the Step-N data reveal
+  // proceed. Mirror that here so the playground doesn't sit waiting on
+  // a yes/no that production would never demand.
+  if (!placesHit) return { skipConfirmation: true };
+
+  session.confirmationPending = { name: confirmName, address: confirmAddress, city: practiceCity };
+  const confirmationMsg = confirmAddress
+    ? `Found ${confirmName} at ${confirmAddress} — is that the right one?`
+    : `Found ${confirmName} — is that the right one?`;
+  return { confirmationMsg };
+}
+
+// Match the regexes used by handleConfirmationReply so the playground's
+// state machine recognises the same affirmative/negative/ambiguous reply
+// shapes that production does.
+function _playgroundIsAffirmative(text) {
+  const t = String(text || '').trim().toLowerCase();
+  if (!t) return false;
+  return /^(yes|yeah|yep|yup|correct|right|that('s| is)( it| right| the one)?|sure|exactly|affirmative|ok(ay)?|y)\b/.test(t);
+}
+function _playgroundIsNegative(text) {
+  const t = String(text || '').trim().toLowerCase();
+  if (!t) return false;
+  return /^(no|nope|not (quite|right|that one|it)|wrong|different|nah|incorrect)\b/.test(t) || t === 'n';
+}
+
+function _playgroundSeedScanData(session) {
+  const name = session.practiceName || 'Your Practice';
+  const city = session.confirmationPending?.city || session.city || 'your area';
+  const competitorName = `${city.split(',')[0]} Hearing Center`;
+  session.researchData = {
+    practiceName: name,
+    reviews: 27,
+    rating: 4.6,
+    competitors: [competitorName, 'Premier Audiology', 'Beltone'],
+    competitorSummary: `${competitorName} has 4× your review count and ranks #1 in 14/15 nearby searches.`,
+    prospectRank: 5
+  };
+  session.scanResults = {
+    visibleTop3: 3,
+    invisible: 12,
+    totalPoints: 15,
+    topCompetitor: competitorName,
+    averageRankWhereVisible: 7
+  };
 }
 
 function _extractPlaygroundMarkers(text, session) {
@@ -2152,6 +2255,78 @@ app.post('/admin/playground/message', requireAdmin, async (req, res) => {
     // Append user message to history
     session.messages.push({ role: 'user', content: message });
 
+    // ── Production-parity confirmation state machine ──
+    // When confirmationPending or awaitingRetryName is set, intercept the
+    // reply BEFORE calling Claude — exactly as live handleInbound routes
+    // these to handleConfirmationReply / handleRetryName. This keeps
+    // playground behavior deterministic and matches live SMS flow.
+    if (session.confirmationPending) {
+      if (_playgroundIsNegative(message)) {
+        const denied = "No problem — what's the exact name as it appears on Google Maps, and what street is it on?";
+        session.confirmationPending = null;
+        session.awaitingRetryName = true;
+        session.messages.push({ role: 'assistant', content: denied });
+        return res.json({
+          ok: true,
+          reply: denied,
+          raw: denied,
+          markers: [],
+          extraMessages: [],
+          currentStep: session.currentStep,
+          variant: session.variant,
+          tokenUsage: { input: 0, output: 0 },
+          elapsedMs: 0,
+          estCost: 0,
+          systemPromptPreview: '(intercepted: confirmation denied)'
+        });
+      }
+      if (_playgroundIsAffirmative(message)) {
+        _playgroundSeedScanData(session);
+        session.confirmationPending = null;
+        // Fall through to normal Claude call so it produces the data reveal.
+      } else {
+        const reprompt = "Just want to make sure — is that your practice listing? Reply yes or no.";
+        session.messages.push({ role: 'assistant', content: reprompt });
+        return res.json({
+          ok: true,
+          reply: reprompt,
+          raw: reprompt,
+          markers: [],
+          extraMessages: [],
+          currentStep: session.currentStep,
+          variant: session.variant,
+          tokenUsage: { input: 0, output: 0 },
+          elapsedMs: 0,
+          estCost: 0,
+          systemPromptPreview: '(intercepted: confirmation re-prompt)'
+        });
+      }
+    } else if (session.awaitingRetryName) {
+      // Mirror handleRetryName: treat the reply as the corrected practice
+      // name and re-run the lookup.
+      session.awaitingRetryName = false;
+      const retryMarker = `${message.trim()}||${session.city || ''}`;
+      const retry = await _playgroundLookupPractice(retryMarker, session);
+      if (retry.confirmationMsg) {
+        session.messages.push({ role: 'assistant', content: retry.confirmationMsg });
+        return res.json({
+          ok: true,
+          reply: retry.confirmationMsg,
+          raw: retry.confirmationMsg,
+          markers: [],
+          extraMessages: [],
+          currentStep: session.currentStep,
+          variant: session.variant,
+          tokenUsage: { input: 0, output: 0 },
+          elapsedMs: 0,
+          estCost: 0,
+          systemPromptPreview: '(intercepted: retry confirmation)'
+        });
+      }
+      // Lookup missed — seed scan data and let Claude continue with reveal.
+      _playgroundSeedScanData(session);
+    }
+
     // ── Build system prompt — mirrors the live handleInbound pipeline ──
     const systemContent = _buildPlaygroundSystemPrompt(session);
 
@@ -2181,11 +2356,48 @@ app.post('/admin/playground/message', requireAdmin, async (req, res) => {
     // before storing in conversations.addExchange)
     session.messages.push({ role: 'assistant', content: display });
 
+    // Production-parity simulation: if the AI emitted [PRACTICE_DETECTED],
+    // the live webhook follows up with a Google Places address-confirmation
+    // message before continuing. Do the same here so the playground doesn't
+    // appear to "freeze" after the bridge ("Pulling up your listing now.").
+    let extraMessages = [];
+    const detectedMarker = markers.find(m => m.type === 'PRACTICE_DETECTED');
+    if (detectedMarker) {
+      try {
+        const lookup = await _playgroundLookupPractice(detectedMarker.value, session);
+        if (lookup.confirmationMsg) {
+          // Anthropic disallows consecutive same-role messages, so merge
+          // the synthetic confirmation into the prior assistant turn for
+          // conversation history. The UI still renders it as a separate
+          // bubble via extraMessages so it visually matches live SMS.
+          const last = session.messages[session.messages.length - 1];
+          if (last && last.role === 'assistant') {
+            last.content = `${last.content}\n\n${lookup.confirmationMsg}`.trim();
+          } else {
+            session.messages.push({ role: 'assistant', content: lookup.confirmationMsg });
+          }
+          extraMessages.push({
+            reply: lookup.confirmationMsg,
+            source: 'system_confirmation',
+            meta: 'system · address confirmation'
+          });
+        } else if (lookup.skipConfirmation) {
+          // No key, no result, or empty marker — match live flow which
+          // skips the confirmation step. Seed scan data so subsequent
+          // turns can produce the data reveal.
+          _playgroundSeedScanData(session);
+        }
+      } catch (err) {
+        console.error('[Playground] Confirmation simulation error:', err.message);
+      }
+    }
+
     res.json({
       ok: true,
       reply: display,
       raw,
       markers,
+      extraMessages,
       currentStep: session.currentStep,
       variant: session.variant,
       tokenUsage: {
@@ -4447,6 +4659,14 @@ async function sendMsg() {
     } else {
       const meta = 'Variant ' + data.variant + ' \u00B7 step ' + data.currentStep;
       appendBubble('ai', data.reply || '(empty reply)', meta);
+      // Render any system-emitted follow-ups (e.g. address confirmation
+      // after PRACTICE_DETECTED) so the playground mirrors what the live
+      // SMS thread actually shows.
+      if (Array.isArray(data.extraMessages)) {
+        for (const extra of data.extraMessages) {
+          appendBubble('ai', extra.reply, extra.meta || 'system');
+        }
+      }
       applyResponseStats(data);
     }
   } catch (err) {
