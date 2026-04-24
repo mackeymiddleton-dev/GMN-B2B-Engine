@@ -1286,7 +1286,7 @@ app.post('/api/contacts/:contactId/reset-spend', requireAdmin, (req, res) => {
 
 app.get('/api/brain/stats', requireAdmin, (req, res) => {
   const stats = brain.getStats();
-  const enrolledTotal = conversations.getAll().length;
+  const enrolledTotal = Object.keys(conversations.getAll()).length;
   res.json({ ...stats, enrolledTotal });
 });
 
@@ -1950,12 +1950,19 @@ tr:hover td{background:#18181c}
 
 <div class="refresh-bar"><span class="dot-live"></span>Auto-refreshes every 30s &nbsp;&bull;&nbsp; next refresh in <span id="countdown">30</span>s</div>
 
-<!-- ── Stats Strip ── -->
+<!-- ── Funnel Strip ── -->
 <div class="stats-strip" id="stats-strip">
   <div class="stat-card"><div class="val" id="s-leads">—</div><div class="lbl">Total Leads</div><div class="sub">enrolled contacts</div></div>
   <div class="stat-card"><div class="val" id="s-replied-once">—</div><div class="lbl">Replied Once</div><div class="sub">% of total leads</div></div>
   <div class="stat-card"><div class="val" id="s-replied-4">—</div><div class="lbl">4+ Replies</div><div class="sub">% of total leads</div></div>
   <div class="stat-card stat-highlight"><div class="val" id="s-booked-rate" style="color:#4ade80">—</div><div class="lbl">Booking Rate</div><div class="sub">% of total leads</div></div>
+</div>
+
+<!-- ── Queue Ops Strip ── -->
+<div class="stats-strip" id="ops-strip" style="grid-template-columns:repeat(3,1fr);margin-top:-6px;margin-bottom:18px">
+  <div class="stat-card" style="padding:8px 10px"><div class="val" id="s-queued" style="font-size:18px">—</div><div class="lbl">In Queue</div></div>
+  <div class="stat-card" style="padding:8px 10px"><div class="val" id="s-today" style="font-size:18px;color:#f59e0b">—</div><div class="lbl">Sending Today</div></div>
+  <div class="stat-card" style="padding:8px 10px"><div class="val" id="s-sent" style="font-size:18px">—</div><div class="lbl">Sent Total</div></div>
 </div>
 
 <!-- ── Follow-Up Queue ── -->
@@ -2273,6 +2280,10 @@ async function loadFollowups() {
       contactMap = {};
       contacts.forEach(c => { contactMap[c.contactId] = c; });
     }
+    const todayEnd = new Date(); todayEnd.setHours(23,59,59,999);
+    document.getElementById('s-queued').textContent = pending.length;
+    document.getElementById('s-today').textContent  = pending.filter(j => j.sendAt && j.sendAt <= todayEnd.getTime()).length;
+    document.getElementById('s-sent').textContent   = sent.length;
     renderQueue();
   } catch (err) {
     document.getElementById('followups-content').innerHTML = '<div class="empty">Failed to load queue: ' + escHtml(err.message) + '</div>';
@@ -2289,6 +2300,8 @@ async function loadBrain() {
     const t = data.totals || {};
     const total = data.enrolledTotal || t.contacts || 0;
     const pct = (n) => total > 0 ? Math.round(((n || 0) / total) * 100) + '%' : '—';
+    const replyRate  = t.settled > 0 ? Math.round((t.repliedMsgs / t.settled) * 100) : 0;
+    const bookedRate = total > 0 ? Math.round(((t.booked || 0) / total) * 100) : 0;
 
     // Update funnel stat cards
     document.getElementById('s-leads').textContent        = total || '—';

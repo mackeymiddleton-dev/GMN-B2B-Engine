@@ -1,13 +1,13 @@
 {
   "sms_scripted": {
     "_meta": {
-      "analyzedAt": 1777012851842,
+      "analyzedAt": 1777013046250,
       "totalMessages": 2,
       "distinctContacts": 2
     }
   },
   "_meta": {
-    "analyzedAt": 1777012851842,
+    "analyzedAt": 1777013046250,
     "totalMessages": 2,
     "distinctContacts": 2
   },
@@ -20,7 +20,7 @@
       "replyRate": null,
       "booked": 0,
       "bookingRate": null,
-      "analyzedAt": 1777012851842
+      "analyzedAt": 1777013046250
     },
     {
       "variant": "B",
@@ -30,7 +30,7 @@
       "replyRate": null,
       "booked": 0,
       "bookingRate": null,
-      "analyzedAt": 1777012851842
+      "analyzedAt": 1777013046250
     },
     {
       "variant": "C",
@@ -40,11 +40,11 @@
       "replyRate": null,
       "booked": 0,
       "bookingRate": null,
-      "analyzedAt": 1777012851842
+      "analyzedAt": 1777013046250
     }
   ],
   "_qualitativeInsights": {
-    "text": "I cannot provide meaningful insights from this data because the statistics are incomplete. The sends are showing as undefined and both reply rates and booking rates are null across all patterns. Additionally, the message pattern content is showing only placeholder text (\"...\") rather than actual message examples.\n\nTo generate actionable coaching insights, I would need the actual message text for each pattern cluster, the number of sends per pattern, and valid percentage values for reply and booking rates. Please provide the complete dataset and I can identify which specific approaches are working and what changes the team should make.",
-    "generatedAt": 1777012856257
+    "text": "I cannot provide meaningful insights from this data. The performance metrics show null values for reply rates and booking rates, and the send counts are undefined. The message pattern examples are also showing as placeholder text (\"...\") rather than actual message content.\n\nTo deliver actionable coaching insights, I would need complete data including actual send volumes, calculated reply and booking percentages, and the real message text from each cluster so I can identify what language, tone, or structure is driving performance differences.\n\nPlease re-run the analysis with populated data fields and I can provide specific, evidence-based recommendations.",
+    "generatedAt": 1777013051172
   }
 }
