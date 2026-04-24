@@ -1975,6 +1975,13 @@ app.post('/admin/playground/message', requireAdmin, async (req, res) => {
     // ── Build system prompt — mirrors the live handleInbound pipeline ──
     const systemContent = _buildPlaygroundSystemPrompt(session);
 
+    // Anthropic requires the first message to be role:user. After /start,
+    // session.messages begins with the assistant opener — prepend a synthetic
+    // trigger user-message for the API call only (not stored in history).
+    const apiMessages = session.messages[0]?.role === 'assistant'
+      ? [{ role: 'user', content: 'Begin the conversation.' }, ...session.messages]
+      : session.messages;
+
     // ── Call Claude ──
     const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';
     const t0 = Date.now();
@@ -1982,7 +1989,7 @@ app.post('/admin/playground/message', requireAdmin, async (req, res) => {
       model,
       max_tokens: 512,
       system: systemContent,
-      messages: session.messages
+      messages: apiMessages
     });
     const elapsedMs = Date.now() - t0;
 
@@ -2046,9 +2053,11 @@ app.post('/admin/playground/start', requireAdmin, async (req, res) => {
     const systemContent = _buildPlaygroundSystemPrompt(session);
 
     // Single trigger message — Anthropic API requires a non-empty messages
-    // array, so we send a minimal "begin" instruction. We also store it in
-    // session.messages so subsequent /message calls satisfy the
-    // "first message must be user role" rule.
+    // array, so we send a minimal "begin" instruction for this call only. We
+    // do NOT persist this trigger in session.messages so the rest of the
+    // conversation reflects what the prospect actually sees: assistant opener,
+    // then user replies. The /message endpoint detects the assistant-first
+    // case and prepends a synthetic trigger for subsequent API calls.
     const triggerMessage = 'Begin the conversation now. Generate only the opening SMS message you would send to start the conversation.';
     const triggerMessages = [{ role: 'user', content: triggerMessage }];
 
@@ -2065,8 +2074,8 @@ app.post('/admin/playground/start', requireAdmin, async (req, res) => {
     const raw = response.content[0]?.text?.trim() || '';
     const { display, markers } = _extractPlaygroundMarkers(raw, session);
 
-    // Seed the session so the first user reply has valid history.
-    session.messages.push({ role: 'user', content: triggerMessage });
+    // Seed only the assistant opener — the trigger user-message stays out of
+    // history so the conversation accurately reflects what the prospect sees.
     session.messages.push({ role: 'assistant', content: display });
 
     res.json({
@@ -4258,13 +4267,16 @@ async function startConvo() {
   if (!validateCustomBeforeSend()) return;
   const startBtn = document.getElementById('btn-start');
   SENDING = true;
-  if (startBtn) startBtn.disabled = true;
+  if (startBtn) {
+    startBtn.disabled = true;
+    startBtn.textContent = 'Composing\u2026';
+  }
   document.getElementById('btn-send').disabled = true;
 
-  // Render the thinking bubble in place; keep the start CTA visible until we
-  // know the call succeeded so the user can retry on error.
-  const thinking = appendBubble('ai', 'AI is composing the opener\u2026');
-  thinking.classList.add('thinking');
+  let restoreStartButton = () => {
+    const b = document.getElementById('btn-start');
+    if (b) { b.disabled = false; b.textContent = '\u25B6 Start Conversation'; }
+  };
 
   try {
     const res = await fetch('/admin/playground/start?key=' + encodeURIComponent(ADMIN_KEY), {
@@ -4273,9 +4285,10 @@ async function startConvo() {
       body: JSON.stringify(buildPayloadBase())
     });
     const data = await res.json();
-    thinking.remove();
     if (!res.ok) {
-      appendBubble('ai', '\u26A0 Error: ' + (data.error || res.statusText));
+      // Keep the start CTA visible so the user can retry without resetting.
+      restoreStartButton();
+      appendStatusInline('\u26A0 Error: ' + (data.error || res.statusText));
     } else {
       hideStartCta();
       const meta = 'Variant ' + data.variant + ' \u00B7 opener \u00B7 step ' + data.currentStep;
@@ -4283,14 +4296,29 @@ async function startConvo() {
       applyResponseStats(data);
     }
   } catch (err) {
-    thinking.remove();
-    appendBubble('ai', '\u26A0 Network error: ' + err.message);
+    restoreStartButton();
+    appendStatusInline('\u26A0 Network error: ' + err.message);
   } finally {
     SENDING = false;
-    if (startBtn) startBtn.disabled = false;
     document.getElementById('btn-send').disabled = false;
     document.getElementById('msg-input').focus();
   }
+}
+
+// Renders an inline status line inside the empty-state (so the start CTA
+// stays visible) — falls back to a normal AI bubble if the empty-state was
+// already removed.
+function appendStatusInline(text) {
+  const empty = document.getElementById('empty-state');
+  if (!empty) return appendBubble('ai', text);
+  let line = empty.querySelector('.start-status');
+  if (!line) {
+    line = document.createElement('div');
+    line.className = 'start-status';
+    line.style.cssText = 'margin-top:12px;color:#dc2626;font-size:13px;font-weight:600;';
+    empty.appendChild(line);
+  }
+  line.textContent = text;
 }
 
 async function resetConvo() {
