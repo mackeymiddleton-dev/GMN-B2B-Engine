@@ -4757,7 +4757,10 @@ if (ENABLED_VARIANTS.length && !ENABLED_VARIANTS.includes('A')) {
 function pickVariant(v) {
   const previousVariant = VARIANT;
   VARIANT = v;
-  document.querySelectorAll('.vpill').forEach(b => {
+  // Same scoping rule as the disable-initializer above — only touch the
+  // variant pills, never the scan-mode pills (which manage their own
+  // active state via pickScanMode).
+  document.querySelectorAll('.vpill[data-v]').forEach(b => {
     b.classList.toggle('active', b.dataset.v === v);
   });
   document.getElementById('s-variant').textContent = v;
