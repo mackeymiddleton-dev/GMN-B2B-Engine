@@ -2269,107 +2269,129 @@ function buildAdminDashboardPage(adminKey) {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Admin Dashboard — Powered Up AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body{background:#0c0c0e;color:#e2e2e2;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh;padding:32px 16px 80px}
-a{color:#818cf8;text-decoration:none}a:hover{text-decoration:underline}
+body{background:
+  radial-gradient(circle at 8% 82%, rgba(45,212,191,.12) 0, rgba(45,212,191,0) 26%),
+  radial-gradient(circle at 92% 12%, rgba(56,189,248,.12) 0, rgba(56,189,248,0) 24%),
+  linear-gradient(180deg,#fbfbfb 0%,#f7fbfb 48%,#ffffff 100%);
+  color:#0f172a;font-family:'Inter',system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh;padding:32px 16px 80px;-webkit-font-smoothing:antialiased}
+a{color:#0ea56f;text-decoration:none;font-weight:600}a:hover{text-decoration:underline}
 
 /* ── Header ── */
-.header{max-width:980px;margin:0 auto 32px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
-.header-left .logo{font-size:11px;font-weight:700;letter-spacing:.1em;color:#444;text-transform:uppercase;margin-bottom:4px}
-.header-left h1{font-size:20px;font-weight:700;color:#fff}
-.header-right{display:flex;gap:10px;flex-wrap:wrap}
-.btn{display:inline-block;font-size:12px;font-weight:600;padding:7px 14px;border-radius:8px;border:1px solid #2a2a2a;background:#1a1a1a;color:#aaa;cursor:pointer;text-decoration:none;transition:border-color .15s,color .15s}
-.btn:hover{border-color:#818cf8;color:#818cf8;text-decoration:none}
-.btn-primary{background:#1e1b4b;border-color:#4f46e5;color:#818cf8}
-.btn-primary:hover{background:#2d2b66;color:#a5b4fc}
+.header{max-width:1100px;margin:0 auto 28px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.header-left .logo{font-size:11px;font-weight:700;letter-spacing:.32em;color:#9ca3af;text-transform:uppercase;margin-bottom:6px}
+.header-left h1{font-size:28px;font-weight:900;color:#0f172a;letter-spacing:-.02em;line-height:1.1}
+.header-right{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.btn{display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;padding:9px 16px;border-radius:999px;border:1px solid rgba(203,213,225,.9);background:#fff;color:#334155;cursor:pointer;text-decoration:none;transition:all .15s;box-shadow:0 1px 2px rgba(15,23,42,.04)}
+.btn:hover{border-color:#94a3b8;color:#0f172a;text-decoration:none;box-shadow:0 4px 10px rgba(15,23,42,.06)}
+.btn-primary{background:linear-gradient(180deg,#28c48a 0%,#0ea56f 100%);border-color:rgba(16,185,129,.45);color:#fff;box-shadow:0 8px 18px rgba(16,185,129,.22),inset 0 1px 0 rgba(255,255,255,.28)}
+.btn-primary:hover{filter:saturate(1.05) brightness(1.02);color:#fff}
 
 /* ── Refresh bar ── */
-.refresh-bar{max-width:980px;margin:-16px auto 20px;font-size:11px;color:#3a3a3a;text-align:right}
+.refresh-bar{max-width:1100px;margin:-12px auto 22px;font-size:11px;color:#94a3b8;text-align:right;font-weight:600;letter-spacing:.04em}
 
 /* ── Stats strip ── */
-.stats-strip{max-width:980px;margin:0 auto 24px;display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px}
-.stat-card{background:#131316;border:1px solid #222;border-radius:12px;padding:16px;text-align:center}
-.funnel-header{max-width:980px;margin:0 auto 10px;display:flex;align-items:center;justify-content:space-between;gap:8px}
-.funnel-header .funnel-label{font-size:11px;color:#555;text-transform:uppercase;letter-spacing:.07em}
-.filter-pills{display:flex;gap:5px}
-.filter-pill{background:#131316;border:1px solid #2a2a2a;color:#666;border-radius:20px;padding:4px 12px;font-size:11px;cursor:pointer;transition:background .15s,color .15s,border-color .15s}
-.filter-pill:hover{border-color:#444;color:#aaa}
-.filter-pill.active{background:#6366f1;border-color:#6366f1;color:#fff}
-.stat-card .val{font-size:30px;font-weight:700;color:#fff;line-height:1.1}
-.stat-card .lbl{font-size:11px;color:#555;margin-top:5px;text-transform:uppercase;letter-spacing:.07em}
-.stat-card .sub{font-size:11px;color:#444;margin-top:3px}
-.stat-card .delta{font-size:11px;margin-top:5px;font-weight:600;letter-spacing:.02em}
-.stat-card .delta.up{color:#4ade80}
-.stat-card .delta.down{color:#f87171}
-.stat-card .delta.flat{color:#555}
-.stat-highlight .val{color:#818cf8}
+.stats-strip{max-width:1100px;margin:0 auto 18px;display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}
+.stat-card{background:rgba(255,255,255,.86);backdrop-filter:blur(12px);border:1px solid rgba(203,213,225,.7);border-radius:18px;padding:18px 14px;text-align:center;box-shadow:0 12px 28px rgba(15,23,42,.05)}
+.funnel-header{max-width:1100px;margin:6px auto 10px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.funnel-header .funnel-label{font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.12em;font-weight:800}
+.filter-pills{display:flex;gap:6px}
+.filter-pill{background:#fff;border:1px solid rgba(203,213,225,.9);color:#64748b;border-radius:999px;padding:5px 14px;font-size:11px;font-weight:700;cursor:pointer;transition:all .15s;box-shadow:0 1px 2px rgba(15,23,42,.04)}
+.filter-pill:hover{border-color:#94a3b8;color:#0f172a}
+.filter-pill.active{background:linear-gradient(180deg,#28c48a 0%,#0ea56f 100%);border-color:transparent;color:#fff;box-shadow:0 6px 14px rgba(16,185,129,.22)}
+.stat-card .val{font-size:30px;font-weight:900;color:#0f172a;line-height:1.05;letter-spacing:-.02em}
+.stat-card .lbl{font-size:11px;color:#64748b;margin-top:6px;text-transform:uppercase;letter-spacing:.1em;font-weight:700}
+.stat-card .sub{font-size:11px;color:#94a3b8;margin-top:3px;font-weight:500}
+.stat-card .delta{font-size:11px;margin-top:5px;font-weight:700;letter-spacing:.02em}
+.stat-card .delta.up{color:#10b981}
+.stat-card .delta.down{color:#ef4444}
+.stat-card .delta.flat{color:#94a3b8}
+.stat-highlight .val{color:#0ea56f}
 
 /* ── Panel ── */
-.panel{background:#131316;border:1px solid #1f1f1f;border-radius:16px;padding:24px;width:100%;max-width:980px;margin:0 auto 20px}
+.panel{background:rgba(255,255,255,.86);backdrop-filter:blur(12px);border:1px solid rgba(203,213,225,.7);border-radius:22px;padding:26px;width:100%;max-width:1100px;margin:0 auto 22px;box-shadow:0 18px 42px rgba(15,23,42,.06)}
 .panel-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px;gap:12px;flex-wrap:wrap}
-.panel-title{font-size:15px;font-weight:700;color:#fff}
-.panel-desc{font-size:12px;color:#444;margin-bottom:18px;line-height:1.5}
+.panel-title{font-size:17px;font-weight:800;color:#0f172a;letter-spacing:-.01em}
+.panel-desc{font-size:13px;color:#64748b;margin-bottom:18px;line-height:1.6}
 .tab-row{display:flex;gap:6px;margin-bottom:18px;flex-wrap:wrap}
-.tab{font-size:12px;font-weight:600;padding:5px 12px;border-radius:20px;border:1px solid #2a2a2a;background:transparent;color:#555;cursor:pointer;transition:all .15s}
-.tab.active{background:#1e1b4b;border-color:#4f46e5;color:#818cf8}
-.tab:hover:not(.active){border-color:#444;color:#aaa}
+.tab{font-size:12px;font-weight:700;padding:6px 14px;border-radius:999px;border:1px solid rgba(203,213,225,.9);background:#fff;color:#64748b;cursor:pointer;transition:all .15s}
+.tab.active{background:linear-gradient(180deg,#28c48a 0%,#0ea56f 100%);border-color:transparent;color:#fff;box-shadow:0 6px 14px rgba(16,185,129,.22)}
+.tab:hover:not(.active){border-color:#94a3b8;color:#0f172a}
 
 /* ── Table ── */
 table{width:100%;border-collapse:collapse;font-size:13px}
-th{text-align:left;color:#444;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.06em;padding:0 12px 10px;border-bottom:1px solid #1e1e1e;white-space:nowrap}
-td{padding:11px 12px;border-bottom:1px solid #191919;color:#bbb;vertical-align:top}
+th{text-align:left;color:#94a3b8;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.08em;padding:0 12px 10px;border-bottom:1px solid rgba(203,213,225,.6);white-space:nowrap}
+td{padding:12px 12px;border-bottom:1px solid rgba(226,232,240,.6);color:#475569;vertical-align:top}
 tr:last-child td{border-bottom:none}
-tr:hover td{background:#18181c}
-.name-cell{font-weight:500;color:#e2e2e2}
-.city-cell{font-size:11px;color:#555;margin-top:2px}
-.time-cell{font-weight:600;color:#e2e2e2}
-.time-sub{font-size:11px;color:#555;margin-top:2px}
+tr:hover td{background:rgba(236,253,245,.45)}
+.name-cell{font-weight:600;color:#0f172a}
+.city-cell{font-size:11px;color:#94a3b8;margin-top:2px;font-weight:500}
+.time-cell{font-weight:700;color:#0f172a}
+.time-sub{font-size:11px;color:#94a3b8;margin-top:2px;font-weight:500}
 
 /* ── Badges ── */
-.badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;white-space:nowrap}
-.b-sms{background:#0f1f3a;color:#60a5fa;border:1px solid #1e3a6a}
-.b-email{background:#0d2a1a;color:#34d399;border:1px solid #145228}
-.b-pending{background:#2a1f00;color:#f59e0b;border:1px solid #6b4e00}
-.b-sent{background:#0d2a1a;color:#34d399;border:1px solid #145228}
-.b-skipped{background:#1a1a1a;color:#555;border:1px solid #2a2a2a}
-.b-cancelled{background:#1a1a1a;color:#444;border:1px solid #222}
-.b-booked{background:#0d2a1a;color:#4ade80;border:1px solid #14532d}
-.b-active{background:#0f1f3a;color:#60a5fa;border:1px solid #1e3a6a}
+.badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;white-space:nowrap}
+.b-sms{background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe}
+.b-email{background:#ecfdf5;color:#059669;border:1px solid #a7f3d0}
+.b-pending{background:#fffbeb;color:#b45309;border:1px solid #fde68a}
+.b-sent{background:#ecfdf5;color:#059669;border:1px solid #a7f3d0}
+.b-skipped{background:#f1f5f9;color:#64748b;border:1px solid #e2e8f0}
+.b-cancelled{background:#f8fafc;color:#94a3b8;border:1px solid #e2e8f0}
+.b-booked{background:#ecfdf5;color:#047857;border:1px solid #6ee7b7}
+.b-active{background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe}
 
 /* ── Stage label ── */
-.stage-label{font-weight:600;color:#e2e2e2;display:block}
-.stage-sub{font-size:11px;color:#555;margin-top:2px;display:block}
+.stage-label{font-weight:700;color:#0f172a;display:block}
+.stage-sub{font-size:11px;color:#94a3b8;margin-top:2px;display:block;font-weight:500}
 
 /* ── Summary row above table ── */
-.queue-summary{display:flex;gap:20px;flex-wrap:wrap;margin-bottom:16px}
-.qs-item{font-size:13px;color:#555}
-.qs-item strong{color:#e2e2e2;font-weight:600}
-.qs-item.urgent strong{color:#f59e0b}
+.queue-summary{display:flex;gap:24px;flex-wrap:wrap;margin-bottom:16px}
+.qs-item{font-size:13px;color:#64748b;font-weight:500}
+.qs-item strong{color:#0f172a;font-weight:800}
+.qs-item.urgent strong{color:#d97706}
 
 /* ── Legend ── */
-.legend{background:#0e0e11;border:1px solid #1c1c1f;border-radius:10px;padding:14px 16px;margin-bottom:18px}
-.legend-title{font-size:11px;font-weight:700;color:#444;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px}
-.legend-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}
-.legend-item{display:flex;align-items:flex-start;gap:8px;font-size:12px;color:#555;line-height:1.4}
-.legend-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:3px}
-.ld-1{background:#6366f1}.ld-2{background:#f59e0b}.ld-3{background:#34d399}.ld-4{background:#818cf8}
+.legend{background:rgba(248,250,252,.72);border:1px solid rgba(203,213,225,.7);border-radius:14px;padding:16px 18px;margin-bottom:18px}
+.legend-title{font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.legend-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
+.legend-item{display:flex;align-items:flex-start;gap:8px;font-size:12px;color:#64748b;line-height:1.5}
+.legend-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:5px}
+.ld-1{background:#6366f1}.ld-2{background:#f59e0b}.ld-3{background:#10b981}.ld-4{background:#0ea5e9}
 
 /* ── Performance table ── */
-.perf-table td:first-child{color:#aaa;font-weight:500}
-.rate-good{color:#4ade80;font-weight:700}
-.rate-mid{color:#f59e0b;font-weight:700}
-.rate-low{color:#888;font-weight:700}
+.perf-table td:first-child{color:#475569;font-weight:600}
+.rate-good{color:#10b981;font-weight:800}
+.rate-mid{color:#d97706;font-weight:800}
+.rate-low{color:#94a3b8;font-weight:800}
 
 /* ── Misc ── */
-.empty{color:#333;font-size:13px;padding:24px 0;text-align:center}
-.loading{color:#333;text-align:center;padding:24px;font-size:13px;animation:pulse 1.5s infinite}
-@keyframes pulse{0%,100%{opacity:.4}50%{opacity:1}}
-.dot-live{display:inline-block;width:7px;height:7px;border-radius:50%;background:#22c55e;margin-right:6px;animation:livepulse 2s infinite}
+.empty{color:#94a3b8;font-size:13px;padding:24px 0;text-align:center}
+.loading{color:#94a3b8;text-align:center;padding:24px;font-size:13px;animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:.45}50%{opacity:1}}
+.dot-live{display:inline-block;width:7px;height:7px;border-radius:50%;background:#10b981;margin-right:6px;animation:livepulse 2s infinite}
 @keyframes livepulse{0%,100%{opacity:1}50%{opacity:.4}}
 
 /* ── Table scroll wrapper ── */
 .table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+
+/* ── Action buttons / inputs (used inline in panels) ── */
+.action-btn{display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;padding:9px 16px;border-radius:12px;border:1px solid rgba(203,213,225,.9);background:#fff;color:#334155;cursor:pointer;transition:all .15s;box-shadow:0 1px 2px rgba(15,23,42,.04)}
+.action-btn:hover{border-color:#94a3b8;color:#0f172a;box-shadow:0 4px 10px rgba(15,23,42,.06)}
+.action-btn-primary{background:linear-gradient(180deg,#28c48a 0%,#0ea56f 100%);border-color:transparent;color:#fff;box-shadow:0 8px 18px rgba(16,185,129,.22)}
+.action-btn-primary:hover{filter:saturate(1.05) brightness(1.02);color:#fff}
+.action-btn-warn{background:#fff5f5;border-color:#fecaca;color:#dc2626}
+.action-btn-warn:hover{background:#fee2e2;border-color:#fca5a5;color:#b91c1c}
+.action-btn-info{background:#eff6ff;border-color:#bfdbfe;color:#2563eb}
+.action-btn-info:hover{background:#dbeafe;border-color:#93c5fd;color:#1d4ed8}
+.field-input{background:#fff;border:1px solid rgba(203,213,225,.9);color:#0f172a;padding:10px 14px;border-radius:12px;font-size:13px;outline:none;font-family:inherit;box-shadow:0 1px 0 rgba(255,255,255,.8) inset;transition:border-color .15s,box-shadow .15s}
+.field-input:focus{border-color:#2dd4bf;box-shadow:0 0 0 4px rgba(45,212,191,.12)}
+.subpanel-title{font-size:12px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px}
+.subpanel-desc{font-size:13px;color:#64748b;margin-bottom:14px;line-height:1.6}
+.subpanel-divider{margin-top:22px;border-top:1px solid rgba(203,213,225,.6);padding-top:20px}
 
 /* ── Mobile ── */
 @media(max-width:640px){
@@ -2400,10 +2422,10 @@ tr:hover td{background:#18181c}
 </head>
 <body>
 
-${DEV_MODE ? `<div style="position:fixed;top:0;left:0;right:0;z-index:9999;background:#7c2d12;color:#fed7aa;font-size:13px;font-weight:700;text-align:center;padding:8px 16px;letter-spacing:.04em;border-bottom:2px solid #c2410c">
+${DEV_MODE ? `<div style="position:fixed;top:0;left:0;right:0;z-index:9999;background:linear-gradient(180deg,#fff7ed,#ffedd5);color:#9a3412;font-size:13px;font-weight:700;text-align:center;padding:9px 16px;letter-spacing:.04em;border-bottom:1px solid #fdba74;box-shadow:0 2px 12px rgba(154,52,18,.08)">
   ⚠ DEV MODE — Scheduler &amp; GHL sends are disabled. No real messages will go out.
 </div>
-<div style="height:37px"></div>` : ''}
+<div style="height:39px"></div>` : ''}
 
 <div class="header">
   <div class="header-left">
@@ -2435,7 +2457,7 @@ ${DEV_MODE ? `<div style="position:fixed;top:0;left:0;right:0;z-index:9999;backg
   <div class="stat-card"><div class="val" id="s-leads">—</div><div class="lbl">Total Leads</div><div class="sub">enrolled contacts</div><div class="delta flat" id="d-leads"></div></div>
   <div class="stat-card"><div class="val" id="s-replied-once">—</div><div class="lbl">Replied Once</div><div class="sub">% of total leads</div><div class="delta flat" id="d-replied-once"></div></div>
   <div class="stat-card"><div class="val" id="s-replied-4">—</div><div class="lbl">4+ Replies</div><div class="sub">% of total leads</div><div class="delta flat" id="d-replied-4"></div></div>
-  <div class="stat-card stat-highlight"><div class="val" id="s-booked-rate" style="color:#4ade80">—</div><div class="lbl">Booking Rate</div><div class="sub">% of total leads</div><div class="delta flat" id="d-booked-rate"></div></div>
+  <div class="stat-card stat-highlight"><div class="val" id="s-booked-rate">—</div><div class="lbl">Booking Rate</div><div class="sub">% of total leads</div><div class="delta flat" id="d-booked-rate"></div></div>
 </div>
 
 <!-- ── Queue Ops Strip ── -->
@@ -2464,10 +2486,10 @@ ${DEV_MODE ? `<div style="position:fixed;top:0;left:0;right:0;z-index:9999;backg
   <div class="legend">
     <div class="legend-title">What the Sequence Positions Mean</div>
     <div class="legend-grid">
-      <div class="legend-item"><div class="legend-dot ld-1"></div><span><strong style="color:#c4b5fd">Pos 2–5 &nbsp;·&nbsp; Hooks</strong><br>4 follow-ups over the first week (day 0, 2, 4, 7). First contact after enrollment.</span></div>
-      <div class="legend-item"><div class="legend-dot ld-2"></div><span><strong style="color:#fcd34d">Pos 6–21 &nbsp;·&nbsp; Bi-weekly</strong><br>Every 3–4 days for ~8 weeks. Nurture messages keeping the lead warm.</span></div>
-      <div class="legend-item"><div class="legend-dot ld-3"></div><span><strong style="color:#6ee7b7">Pos 22+ &nbsp;·&nbsp; Monthly</strong><br>One message per month, indefinitely. Long-term follow-up for slow-moving leads.</span></div>
-      <div class="legend-item"><div class="legend-dot ld-4"></div><span><strong style="color:#a5b4fc">Email hooks</strong><br>Parallel email track for contacts with a known email address.</span></div>
+      <div class="legend-item"><div class="legend-dot ld-1"></div><span><strong style="color:#4f46e5">Pos 2–5 &nbsp;·&nbsp; Hooks</strong><br>4 follow-ups over the first week (day 0, 2, 4, 7). First contact after enrollment.</span></div>
+      <div class="legend-item"><div class="legend-dot ld-2"></div><span><strong style="color:#b45309">Pos 6–21 &nbsp;·&nbsp; Bi-weekly</strong><br>Every 3–4 days for ~8 weeks. Nurture messages keeping the lead warm.</span></div>
+      <div class="legend-item"><div class="legend-dot ld-3"></div><span><strong style="color:#047857">Pos 22+ &nbsp;·&nbsp; Monthly</strong><br>One message per month, indefinitely. Long-term follow-up for slow-moving leads.</span></div>
+      <div class="legend-item"><div class="legend-dot ld-4"></div><span><strong style="color:#0369a1">Email hooks</strong><br>Parallel email track for contacts with a known email address.</span></div>
     </div>
   </div>
 
@@ -2479,39 +2501,36 @@ ${DEV_MODE ? `<div style="position:fixed;top:0;left:0;right:0;z-index:9999;backg
 
   <div class="queue-summary" id="queue-summary"></div>
   <div id="followups-content"><div class="loading">Loading&hellip;</div></div>
-  <div style="margin-top:12px;border-top:1px solid #2a2a2a;padding-top:12px;display:flex;align-items:center;gap:12px">
-    <button id="pause-btn" onclick="togglePause()" style="background:#3a1a1a;color:#f87171;border:1px solid #5a2d2d;padding:8px 20px;border-radius:6px;cursor:pointer;font-size:14px;font-weight:600">⏸ Pause Everything</button>
-    <button onclick="syncBookings(this)" style="background:#1a2a3a;color:#60a5fa;border:1px solid #2d4a5a;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600">↻ Sync Bookings from GHL</button>
-    <span id="rebuild-status" style="font-size:12px;color:#888"></span>
+  <div style="margin-top:14px;border-top:1px solid rgba(203,213,225,.6);padding-top:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    <button id="pause-btn" class="action-btn action-btn-warn" onclick="togglePause()">⏸ Pause Everything</button>
+    <button class="action-btn action-btn-info" onclick="syncBookings(this)">↻ Sync Bookings from GHL</button>
+    <span id="rebuild-status" style="font-size:12px;color:#94a3b8;font-weight:500"></span>
   </div>
 
-  <div style="margin-top:20px;border-top:1px solid #2a2a2a;padding-top:18px">
-    <div style="font-size:12px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Enrollment Sync</div>
-    <div style="font-size:13px;color:#555;margin-bottom:14px">Pulls everyone with a specific GHL tag and registers any who aren't in the system yet. Does <strong style="color:#888">not</strong> send any messages — GHL's automation handles the intro. When contacts reply, the AI takes over automatically. Enter the exact tag name from GHL.</div>
+  <div class="subpanel-divider">
+    <div class="subpanel-title">Enrollment Sync</div>
+    <div class="subpanel-desc">Pulls everyone with a specific GHL tag and registers any who aren't in the system yet. Does <strong style="color:#0f172a;font-weight:700">not</strong> send any messages — GHL's automation handles the intro. When contacts reply, the AI takes over automatically. Enter the exact tag name from GHL.</div>
     <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end">
-      <input id="sync-tag-input" type="text" placeholder="GHL tag name (e.g. Powered Up AI)"
-        style="background:#1a1a1a;border:1px solid #333;color:#e0e0e0;padding:8px 12px;border-radius:6px;font-size:13px;width:260px;outline:none">
-      <button onclick="runEnrollmentSync()" style="background:#1a2a3a;color:#60a5fa;border:1px solid #2d4a5a;padding:8px 18px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600">Sync Now</button>
+      <input id="sync-tag-input" type="text" placeholder="GHL tag name (e.g. Powered Up AI)" class="field-input" style="width:280px">
+      <button class="action-btn action-btn-primary" onclick="runEnrollmentSync()">Sync Now</button>
     </div>
-    <div id="sync-status" style="font-size:13px;margin-top:10px"></div>
-    <div id="sync-results" style="font-size:12px;color:#888;margin-top:6px"></div>
+    <div id="sync-status" style="font-size:13px;margin-top:10px;font-weight:600"></div>
+    <div id="sync-results" style="font-size:12px;color:#64748b;margin-top:6px"></div>
   </div>
 
-  <div style="margin-top:20px;border-top:1px solid #2a2a2a;padding-top:18px">
-    <div style="font-size:12px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Missed Reply Trigger</div>
-    <div style="font-size:13px;color:#555;margin-bottom:14px">If someone replied while the server was down and the AI never responded, search for them here and trigger the reply now.</div>
+  <div class="subpanel-divider">
+    <div class="subpanel-title">Missed Reply Trigger</div>
+    <div class="subpanel-desc">If someone replied while the server was down and the AI never responded, search for them here and trigger the reply now.</div>
     <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end">
       <div style="position:relative">
-        <input id="replay-name-input" type="text" placeholder="Search contact name…" oninput="replaySearchContacts(this.value)"
-          style="background:#1a1a1a;border:1px solid #333;color:#e0e0e0;padding:8px 12px;border-radius:6px;font-size:13px;width:220px;outline:none">
-        <div id="replay-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:#1e1e1e;border:1px solid #333;border-top:none;border-radius:0 0 6px 6px;z-index:100;max-height:180px;overflow-y:auto"></div>
+        <input id="replay-name-input" type="text" placeholder="Search contact name…" class="field-input" style="width:240px" oninput="replaySearchContacts(this.value)">
+        <div id="replay-dropdown" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1px solid rgba(203,213,225,.9);border-radius:12px;box-shadow:0 12px 28px rgba(15,23,42,.12);z-index:100;max-height:200px;overflow-y:auto"></div>
       </div>
-      <input id="replay-msg-input" type="text" placeholder="Their message (e.g. Go)" value="Go"
-        style="background:#1a1a1a;border:1px solid #333;color:#e0e0e0;padding:8px 12px;border-radius:6px;font-size:13px;width:180px;outline:none">
-      <button onclick="triggerReplayInbound()" style="background:#1a3a2a;color:#4ade80;border:1px solid #2d5a3a;padding:8px 18px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600">Trigger AI Response</button>
+      <input id="replay-msg-input" type="text" placeholder="Their message (e.g. Go)" value="Go" class="field-input" style="width:180px">
+      <button class="action-btn action-btn-primary" onclick="triggerReplayInbound()">Trigger AI Response</button>
     </div>
-    <div id="replay-selected" style="font-size:12px;color:#888;margin-top:8px"></div>
-    <div id="replay-status" style="font-size:13px;margin-top:8px"></div>
+    <div id="replay-selected" style="font-size:12px;color:#64748b;margin-top:8px"></div>
+    <div id="replay-status" style="font-size:13px;margin-top:8px;font-weight:600"></div>
   </div>
 </div>
 
@@ -2824,8 +2843,8 @@ function replaySearchContacts(query) {
   dd.innerHTML = matches.map(c => {
     const name = [c.firstName, c.lastName].filter(Boolean).join(' ') || c.contactId;
     return \`<div onclick="replaySelectContact('\${c.contactId}','\${escHtml(name)}')"
-      style="padding:8px 12px;font-size:13px;color:#ccc;cursor:pointer;border-bottom:1px solid #2a2a2a"
-      onmouseover="this.style.background='#2a2a2a'" onmouseout="this.style.background=''">\${escHtml(name)}</div>\`;
+      style="padding:10px 14px;font-size:13px;color:#334155;cursor:pointer;border-bottom:1px solid rgba(226,232,240,.6);font-weight:500"
+      onmouseover="this.style.background='rgba(236,253,245,.6)'" onmouseout="this.style.background=''">\${escHtml(name)}</div>\`;
   }).join('');
 }
 
@@ -3116,81 +3135,94 @@ function buildPromptEditorPage(adminKey, promptsList) {
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body{background:#0f0f0f;color:#e8e8e8;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh;padding:40px 16px 80px}
-.logo{font-size:13px;font-weight:600;letter-spacing:.08em;color:#555;text-transform:uppercase;text-align:center;margin-bottom:40px}
-h1{font-size:22px;font-weight:700;color:#fff;text-align:center;margin-bottom:8px}
-.subtitle{font-size:14px;color:#666;text-align:center;margin-bottom:40px;line-height:1.5}
-.prompt-card{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:16px;padding:28px 28px 24px;width:100%;max-width:820px;margin:0 auto 24px}
-.prompt-card.modified{border-color:#3b5bdb44}
+body{background:
+  radial-gradient(circle at 8% 82%, rgba(45,212,191,.12) 0, rgba(45,212,191,0) 26%),
+  radial-gradient(circle at 92% 12%, rgba(56,189,248,.12) 0, rgba(56,189,248,0) 24%),
+  linear-gradient(180deg,#fbfbfb 0%,#f7fbfb 48%,#ffffff 100%);
+  color:#0f172a;font-family:'Inter',system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh;padding:32px 16px 80px;-webkit-font-smoothing:antialiased}
+.logo{font-size:12px;font-weight:600;letter-spacing:.32em;color:#9ca3af;text-transform:uppercase;text-align:center;margin-bottom:28px}
+.back-link{display:block;max-width:820px;margin:0 auto 16px;color:#6b7280;font-size:13px;text-decoration:none;font-weight:600}
+h1{font-size:clamp(36px,5.5vw,56px);font-weight:900;color:#0f172a;text-align:center;margin-bottom:14px;letter-spacing:-.04em;line-height:1}
+.subtitle{font-size:16px;color:#475569;text-align:center;margin-bottom:14px;line-height:1.6;max-width:680px;margin-left:auto;margin-right:auto}
+.build-pill{display:inline-block;margin-top:14px;padding:7px 16px;background:rgba(255,255,255,.88);border:1px solid rgba(148,163,184,.28);box-shadow:0 8px 22px rgba(15,23,42,.06);color:#334155;font-size:12px;font-weight:700;border-radius:999px;letter-spacing:.04em}
+.prompt-card{background:rgba(255,255,255,.86);backdrop-filter:blur(12px);border:1px solid rgba(203,213,225,.7);border-radius:22px;padding:28px;width:100%;max-width:820px;margin:0 auto 22px;box-shadow:0 18px 42px rgba(15,23,42,.06)}
+.prompt-card.modified{border-color:rgba(110,231,183,.7);box-shadow:0 18px 42px rgba(16,185,129,.10)}
 .prompt-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px}
-.prompt-label{font-size:15px;font-weight:600;color:#fff;line-height:1.3}
-.badge{font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;white-space:nowrap;flex-shrink:0}
-.badge-modified{background:#3b5bdb22;color:#748ffc;border:1px solid #3b5bdb44}
-.badge-default{background:#1e1e1e;color:#555;border:1px solid #2a2a2a}
-.prompt-desc{font-size:13px;color:#666;margin-bottom:14px;line-height:1.5}
-textarea{width:100%;background:#111;border:1px solid #2a2a2a;border-radius:10px;color:#e8e8e8;font-family:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',monospace;font-size:12.5px;line-height:1.6;padding:14px 16px;resize:vertical;min-height:220px;outline:none;transition:border-color .15s}
-textarea:focus{border-color:#4263eb}
+.prompt-label{font-size:16px;font-weight:800;color:#0f172a;line-height:1.3;letter-spacing:-.01em}
+.badge{font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;white-space:nowrap;flex-shrink:0}
+.badge-modified{background:#ecfdf5;color:#047857;border:1px solid #6ee7b7}
+.badge-default{background:#f1f5f9;color:#64748b;border:1px solid #e2e8f0}
+.prompt-desc{font-size:13px;color:#64748b;margin-bottom:14px;line-height:1.6}
+textarea{width:100%;background:#fff;border:1px solid rgba(203,213,225,.9);border-radius:14px;color:#0f172a;font-family:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',monospace;font-size:12.5px;line-height:1.6;padding:14px 16px;resize:vertical;min-height:220px;outline:none;transition:border-color .15s,box-shadow .15s;box-shadow:0 1px 0 rgba(255,255,255,.8) inset}
+textarea:focus{border-color:#2dd4bf;box-shadow:0 0 0 4px rgba(45,212,191,.12)}
 .actions{display:flex;align-items:center;gap:10px;margin-top:14px;flex-wrap:wrap}
-.btn{padding:9px 20px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:none;transition:opacity .15s}
+.btn{padding:10px 20px;border-radius:12px;font-size:13px;font-weight:700;cursor:pointer;border:none;transition:all .15s;font-family:inherit}
 .btn:disabled{opacity:.45;cursor:default}
-.btn-save{background:#4263eb;color:#fff}
-.btn-save:not(:disabled):hover{background:#3b5bdb}
-.btn-reset{background:transparent;color:#888;border:1px solid #333}
-.btn-reset:not(:disabled):hover{color:#e8e8e8;border-color:#555}
-.status{font-size:12px;margin-left:4px}
-.status-ok{color:#22c55e}
+.btn-save{background:linear-gradient(180deg,#28c48a 0%,#0ea56f 100%);color:#fff;box-shadow:0 8px 18px rgba(16,185,129,.22)}
+.btn-save:not(:disabled):hover{filter:saturate(1.05) brightness(1.02)}
+.btn-reset{background:#fff;color:#64748b;border:1px solid rgba(203,213,225,.9)}
+.btn-reset:not(:disabled):hover{color:#0f172a;border-color:#94a3b8}
+.status{font-size:12px;margin-left:4px;font-weight:600}
+.status-ok{color:#10b981}
 .status-err{color:#ef4444}
-.char-count{font-size:12px;color:#555;margin-left:auto}
-.page-header{text-align:center;max-width:820px;margin:0 auto 40px}
-.modal-overlay{position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.75);display:none;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(4px)}
+.char-count{font-size:12px;color:#94a3b8;margin-left:auto;font-weight:600}
+.page-header{text-align:center;max-width:820px;margin:0 auto 36px}
+.modal-overlay{position:fixed;inset:0;z-index:9999;background:rgba(15,23,42,0.45);display:none;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(8px)}
 .modal-overlay.show{display:flex}
-.modal-box{background:#1a1a1a;border:2px solid #2a2a2a;border-radius:16px;padding:32px 36px;max-width:500px;width:100%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.8)}
-.modal-box.modal-ok{border-color:#22c55e}
-.modal-box.modal-err{border-color:#ef4444}
+.modal-box{background:#fff;border:1px solid rgba(203,213,225,.9);border-radius:22px;padding:32px 36px;max-width:500px;width:100%;text-align:center;box-shadow:0 24px 60px rgba(15,23,42,.18)}
+.modal-box.modal-ok{border-color:#6ee7b7}
+.modal-box.modal-err{border-color:#fca5a5}
 .modal-icon{font-size:48px;line-height:1;margin-bottom:14px}
-.modal-icon.ok{color:#22c55e}
+.modal-icon.ok{color:#10b981}
 .modal-icon.err{color:#ef4444}
-.modal-title{font-size:18px;font-weight:700;color:#fff;margin-bottom:8px}
-.modal-msg{font-size:14px;color:#aaa;line-height:1.6;margin-bottom:22px;word-break:break-word}
-.modal-btn{background:#4263eb;color:#fff;border:none;border-radius:8px;padding:10px 32px;font-size:14px;font-weight:600;cursor:pointer}
-.modal-btn:hover{background:#3b5bdb}
-.last-saved{font-size:11px;color:#3b5bdb;margin-left:8px}
-.variant-section{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:16px;padding:28px 28px 24px;width:100%;max-width:820px;margin:0 auto 24px}
-.variant-section-title{font-size:15px;font-weight:700;color:#fff;margin-bottom:4px}
-.variant-section-desc{font-size:13px;color:#666;margin-bottom:20px;line-height:1.5}
-.variant-tabs{display:flex;gap:0;border-bottom:1px solid #2a2a2a;margin-bottom:20px}
-.variant-tab{padding:8px 20px;font-size:13px;font-weight:600;color:#666;cursor:pointer;border:none;background:none;border-bottom:2px solid transparent;margin-bottom:-1px;transition:color .15s,border-color .15s}
-.variant-tab.active{color:#748ffc;border-bottom-color:#4263eb}
-.variant-tab:hover:not(.active){color:#aaa}
+.modal-title{font-size:20px;font-weight:800;color:#0f172a;margin-bottom:8px;letter-spacing:-.01em}
+.modal-msg{font-size:14px;color:#64748b;line-height:1.6;margin-bottom:22px;word-break:break-word}
+.modal-btn{background:linear-gradient(180deg,#28c48a 0%,#0ea56f 100%);color:#fff;border:none;border-radius:999px;padding:10px 32px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 8px 18px rgba(16,185,129,.22);font-family:inherit}
+.modal-btn:hover{filter:saturate(1.05) brightness(1.02)}
+.last-saved{font-size:11px;color:#10b981;margin-left:8px;font-weight:600}
+.variant-section{background:rgba(255,255,255,.86);backdrop-filter:blur(12px);border:1px solid rgba(203,213,225,.7);border-radius:22px;padding:28px;width:100%;max-width:820px;margin:0 auto 22px;box-shadow:0 18px 42px rgba(15,23,42,.06)}
+.variant-section-title{font-size:16px;font-weight:800;color:#0f172a;margin-bottom:4px;letter-spacing:-.01em}
+.variant-section-desc{font-size:13px;color:#64748b;margin-bottom:20px;line-height:1.6}
+.variant-tabs{display:flex;gap:0;border-bottom:1px solid rgba(203,213,225,.6);margin-bottom:20px}
+.variant-tab{padding:10px 20px;font-size:13px;font-weight:700;color:#64748b;cursor:pointer;border:none;background:none;border-bottom:2px solid transparent;margin-bottom:-1px;transition:color .15s,border-color .15s;font-family:inherit}
+.variant-tab.active{color:#0ea56f;border-bottom-color:#10b981}
+.variant-tab:hover:not(.active){color:#0f172a}
 .variant-tab-panel{display:none}
 .variant-tab-panel.active{display:block}
 .variant-tab-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px}
-.variant-toggle{display:flex;align-items:center;gap:8px;font-size:13px;color:#888}
-.toggle-switch{position:relative;width:36px;height:20px;cursor:pointer}
+.variant-toggle{display:flex;align-items:center;gap:8px;font-size:13px;color:#64748b}
+.toggle-switch{position:relative;width:38px;height:22px;cursor:pointer}
 .toggle-switch input{opacity:0;width:0;height:0}
-.toggle-track{position:absolute;inset:0;background:#333;border-radius:20px;transition:background .2s}
-.toggle-switch input:checked + .toggle-track{background:#22c55e}
-.toggle-thumb{position:absolute;top:3px;left:3px;width:14px;height:14px;background:#fff;border-radius:50%;transition:transform .2s}
+.toggle-track{position:absolute;inset:0;background:#cbd5e1;border-radius:999px;transition:background .2s}
+.toggle-switch input:checked + .toggle-track{background:linear-gradient(180deg,#28c48a 0%,#0ea56f 100%)}
+.toggle-thumb{position:absolute;top:3px;left:3px;width:16px;height:16px;background:#fff;border-radius:50%;transition:transform .2s;box-shadow:0 1px 3px rgba(15,23,42,.18)}
 .toggle-switch input:checked ~ .toggle-thumb{transform:translateX(16px)}
-.toggle-label{font-weight:600}
-.toggle-label.on{color:#22c55e}
-.toggle-label.off{color:#555}
-.variant-stats-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:20px}
-.variant-stats-table th{text-align:left;padding:8px 12px;color:#555;font-weight:600;font-size:11px;letter-spacing:.06em;text-transform:uppercase;border-bottom:1px solid #2a2a2a}
-.variant-stats-table td{padding:9px 12px;border-bottom:1px solid #1f1f1f;color:#ccc}
+.toggle-label{font-weight:700}
+.toggle-label.on{color:#10b981}
+.toggle-label.off{color:#94a3b8}
+.variant-stats-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:14px}
+.variant-stats-table th{text-align:left;padding:10px 12px;color:#94a3b8;font-weight:700;font-size:11px;letter-spacing:.08em;text-transform:uppercase;border-bottom:1px solid rgba(203,213,225,.6)}
+.variant-stats-table td{padding:11px 12px;border-bottom:1px solid rgba(226,232,240,.6);color:#475569}
 .variant-stats-table tr:last-child td{border-bottom:none}
-.vs-badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700}
-.vs-badge-A{background:#3b5bdb22;color:#748ffc}
-.vs-badge-B{background:#d97706/20;color:#f59e0b;background-color:rgba(217,119,6,0.15)}
-.vs-badge-C{background:rgba(16,185,129,0.12);color:#34d399}
-.vs-enabled{color:#22c55e;font-weight:600}
-.vs-disabled{color:#555;font-weight:600}
-.rate-pill{display:inline-block;padding:2px 8px;border-radius:8px;font-size:12px;font-weight:600}
-.rate-high{background:rgba(34,197,94,0.12);color:#22c55e}
-.rate-mid{background:rgba(245,158,11,0.12);color:#f59e0b}
-.rate-low{background:rgba(107,114,128,0.12);color:#6b7280}
+.vs-badge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:800}
+.vs-badge-A{background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe}
+.vs-badge-B{background:#fff7ed;color:#b45309;border:1px solid #fdba74}
+.vs-badge-C{background:#ecfdf5;color:#047857;border:1px solid #6ee7b7}
+.vs-enabled{color:#10b981;font-weight:700}
+.vs-disabled{color:#94a3b8;font-weight:700}
+.rate-pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700}
+.rate-high{background:#ecfdf5;color:#047857;border:1px solid #a7f3d0}
+.rate-mid{background:#fff7ed;color:#b45309;border:1px solid #fed7aa}
+.rate-low{background:#f1f5f9;color:#64748b;border:1px solid #e2e8f0}
+.action-btn{display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;padding:9px 16px;border-radius:12px;border:1px solid rgba(203,213,225,.9);background:#fff;color:#334155;cursor:pointer;transition:all .15s;box-shadow:0 1px 2px rgba(15,23,42,.04);font-family:inherit}
+.action-btn:hover{border-color:#94a3b8;color:#0f172a}
+.action-btn-warn{background:#fff5f5;border-color:#fecaca;color:#dc2626}
+.action-btn-warn:hover{background:#fee2e2;border-color:#fca5a5;color:#b91c1c}
 </style>
 </head>
 <body>
@@ -3203,15 +3235,11 @@ textarea:focus{border-color:#4263eb}
   </div>
 </div>
 <div class="logo">Powered Up AI</div>
-<div style="max-width:820px;margin:0 auto 20px">
-  <a href="/admin?key=${adminKey}" style="color:#748ffc;font-size:13px;text-decoration:none">&larr; Back to Dashboard</a>
-</div>
+<a href="/admin?key=${adminKey}" class="back-link">&larr; Back to Dashboard</a>
 <div class="page-header">
   <h1>Prompt Editor</h1>
   <p class="subtitle">View and edit every AI prompt. Changes take effect immediately — no restart needed.</p>
-  <div style="display:inline-block;margin-top:12px;padding:6px 14px;background:#1e3a8a;color:#93c5fd;font-size:12px;font-weight:700;border-radius:20px;letter-spacing:.04em">
-    BUILD v8 (fast-preview) · LOADED ${new Date().toISOString().replace('T',' ').slice(0,19)} UTC
-  </div>
+  <div class="build-pill">BUILD v8 (fast-preview) · LOADED ${new Date().toISOString().replace('T',' ').slice(0,19)} UTC</div>
 </div>
 <div id="variant-section"></div>
 <div id="prompts"></div>
@@ -3261,23 +3289,23 @@ function renderVariantSection() {
   }).join('');
 
   container.innerHTML = \`
-    <div style="max-width:820px;margin:0 auto 0;padding-bottom:10px;border-bottom:1px solid #2a2a2a;margin-bottom:24px">
-      <span style="font-size:13px;font-weight:700;letter-spacing:.06em;color:#555;text-transform:uppercase">Discovery Script Variants (A / B / C)</span>
+    <div style="max-width:820px;margin:0 auto 0;padding-bottom:12px;border-bottom:1px solid rgba(203,213,225,.6);margin-bottom:20px">
+      <span style="font-size:12px;font-weight:800;letter-spacing:.12em;color:#64748b;text-transform:uppercase">Discovery Script Variants (A / B / C)</span>
     </div>
     <div class="variant-section" id="variant-card">
       <div class="variant-section-title">A/B/C Discovery Script Testing</div>
       <div class="variant-section-desc">Each new contact is permanently assigned one variant. Edit scripts independently below, then enable or disable each variant from the rotation.</div>
       <div class="variant-tabs">\${tabsHtml}</div>
       <div id="variant-panels">\${panelsHtml}</div>
-      <div style="margin-top:28px;border-top:1px solid #2a2a2a;padding-top:24px">
-        <div style="font-size:13px;font-weight:700;color:#fff;margin-bottom:12px">Performance Comparison</div>
-        <div id="variant-stats-table"><span style="font-size:13px;color:#555">Loading stats\u2026</span></div>
+      <div style="margin-top:26px;border-top:1px solid rgba(203,213,225,.6);padding-top:20px">
+        <div style="font-size:14px;font-weight:800;color:#0f172a;margin-bottom:12px;letter-spacing:-.01em">Performance Comparison</div>
+        <div id="variant-stats-table"><span style="font-size:13px;color:#94a3b8">Loading stats\u2026</span></div>
       </div>
-      <div style="margin-top:24px;border-top:1px solid #2a2a2a;padding-top:20px">
-        <div style="font-size:12px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Data Reset</div>
-        <div style="font-size:13px;color:#555;margin-bottom:14px">Wipe all variant assignments and start tracking from scratch. Everything else (contacts, replies, bookings, follow-ups) is kept.</div>
-        <button class="btn" style="background:#3a1a1a;color:#ef4444;border:1px solid #5a2222;font-size:13px" onclick="resetVariantData()">Reset Variant Data</button>
-        <span id="variant-reset-status" style="margin-left:12px;font-size:13px;color:#555"></span>
+      <div style="margin-top:24px;border-top:1px solid rgba(203,213,225,.6);padding-top:20px">
+        <div style="font-size:12px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Data Reset</div>
+        <div style="font-size:13px;color:#64748b;margin-bottom:14px;line-height:1.6">Wipe all variant assignments and start tracking from scratch. Everything else (contacts, replies, bookings, follow-ups) is kept.</div>
+        <button class="action-btn action-btn-warn" onclick="resetVariantData()">Reset Variant Data</button>
+        <span id="variant-reset-status" style="margin-left:12px;font-size:13px;color:#64748b;font-weight:600"></span>
       </div>
     </div>
   \`;
@@ -3424,7 +3452,7 @@ function renderPrompts() {
   ALL_PROMPTS.filter(p => p.name !== 'conversationPrompt').forEach(p => {
     if (p.sectionLabel) {
       const heading = document.createElement('div');
-      heading.style.cssText = 'max-width:820px;margin:40px auto 20px;padding-bottom:10px;border-bottom:1px solid #2a2a2a;';
+      heading.style.cssText = 'max-width:820px;margin:40px auto 20px;padding-bottom:10px;border-bottom:1px solid rgba(203,213,225,.6);';
       heading.innerHTML = \`<span style="font-size:13px;font-weight:700;letter-spacing:.06em;color:#555;text-transform:uppercase">\${escapeHtml(p.sectionLabel)}</span>\`;
       container.appendChild(heading);
     }
@@ -3575,51 +3603,58 @@ function buildEnrollPage(adminKey) {
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body{background:#0f0f0f;color:#e8e8e8;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh;padding:40px 16px 80px}
-.logo{font-size:13px;font-weight:600;letter-spacing:.08em;color:#555;text-transform:uppercase;text-align:center;margin-bottom:40px}
-h1{font-size:22px;font-weight:700;color:#fff;text-align:center;margin-bottom:8px}
-.subtitle{font-size:14px;color:#666;text-align:center;margin-bottom:36px;line-height:1.5}
-.panel{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:16px;padding:28px;width:100%;max-width:1080px;margin:0 auto 24px}
-.panel-title{font-size:15px;font-weight:700;color:#fff;margin-bottom:18px;display:flex;align-items:center;gap:10px}
-.panel-title a{font-size:13px;font-weight:500;color:#748ffc;text-decoration:none;margin-left:auto}
+body{background:
+  radial-gradient(circle at 8% 82%, rgba(45,212,191,.12) 0, rgba(45,212,191,0) 26%),
+  radial-gradient(circle at 92% 12%, rgba(56,189,248,.12) 0, rgba(56,189,248,0) 24%),
+  linear-gradient(180deg,#fbfbfb 0%,#f7fbfb 48%,#ffffff 100%);
+  color:#0f172a;font-family:'Inter',system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh;padding:32px 16px 80px;-webkit-font-smoothing:antialiased}
+.logo{font-size:12px;font-weight:600;letter-spacing:.32em;color:#9ca3af;text-transform:uppercase;text-align:center;margin-bottom:28px}
+h1{font-size:clamp(36px,5.5vw,56px);font-weight:900;color:#0f172a;text-align:center;margin-bottom:14px;letter-spacing:-.04em;line-height:1}
+.subtitle{font-size:15px;color:#475569;text-align:center;margin-bottom:14px;line-height:1.65;max-width:680px;margin-left:auto;margin-right:auto}
+.build-pill{display:inline-block;margin-top:14px;padding:7px 16px;background:rgba(255,255,255,.88);border:1px solid rgba(148,163,184,.28);box-shadow:0 8px 22px rgba(15,23,42,.06);color:#334155;font-size:12px;font-weight:700;border-radius:999px;letter-spacing:.04em}
+.panel{background:rgba(255,255,255,.86);backdrop-filter:blur(12px);border:1px solid rgba(203,213,225,.7);border-radius:22px;padding:28px;width:100%;max-width:1080px;margin:0 auto 22px;box-shadow:0 18px 42px rgba(15,23,42,.06)}
+.panel-title{font-size:16px;font-weight:800;color:#0f172a;margin-bottom:18px;display:flex;align-items:center;gap:10px;letter-spacing:-.01em}
+.panel-title a{font-size:13px;font-weight:600;color:#0ea56f;text-decoration:none;margin-left:auto}
+.panel-title a:hover{text-decoration:underline}
 .controls{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:0}
-label{font-size:13px;color:#aaa}
-input[type=text]{background:#111;border:1px solid #333;border-radius:8px;color:#e8e8e8;font-size:13px;padding:8px 12px;width:160px;outline:none}
-input[type=text]:focus{border-color:#748ffc}
-button{cursor:pointer;font-size:13px;font-weight:600;padding:9px 20px;border-radius:8px;border:none;transition:opacity .15s}
+label{font-size:13px;color:#64748b;font-weight:600}
+input[type=text]{background:#fff;border:1px solid rgba(203,213,225,.9);border-radius:12px;color:#0f172a;font-size:13px;padding:10px 14px;width:220px;outline:none;font-family:inherit;transition:border-color .15s,box-shadow .15s;box-shadow:0 1px 0 rgba(255,255,255,.8) inset}
+input[type=text]:focus{border-color:#2dd4bf;box-shadow:0 0 0 4px rgba(45,212,191,.12)}
+button{cursor:pointer;font-size:13px;font-weight:700;padding:10px 20px;border-radius:12px;border:none;transition:all .15s;font-family:inherit}
 button:disabled{opacity:.45;cursor:default}
-.btn-preview{background:#2a2a2a;color:#e8e8e8}
-.btn-preview:hover:not(:disabled){background:#333}
-.btn-run{background:#4ade80;color:#0a1a0a}
-.btn-run:hover:not(:disabled){opacity:.88}
-.status-bar{font-size:13px;color:#666;margin-top:14px;min-height:20px}
-.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:14px;margin-bottom:0}
-.stat-box{background:#111;border:1px solid #2a2a2a;border-radius:10px;padding:14px 12px;text-align:center}
-.stat-box .val{font-size:26px;font-weight:700;color:#fff;line-height:1}
-.stat-box .lbl{font-size:11px;color:#666;margin-top:6px;text-transform:uppercase;letter-spacing:.06em}
+.btn-preview{background:#fff;color:#334155;border:1px solid rgba(203,213,225,.9);box-shadow:0 1px 2px rgba(15,23,42,.04)}
+.btn-preview:hover:not(:disabled){border-color:#94a3b8;color:#0f172a;box-shadow:0 4px 10px rgba(15,23,42,.06)}
+.btn-run{background:linear-gradient(180deg,#28c48a 0%,#0ea56f 100%);color:#fff;box-shadow:0 8px 18px rgba(16,185,129,.22)}
+.btn-run:hover:not(:disabled){filter:saturate(1.05) brightness(1.02)}
+.status-bar{font-size:13px;color:#64748b;margin-top:14px;min-height:20px;font-weight:500}
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:14px;margin-bottom:0}
+.stat-box{background:rgba(248,250,252,.72);border:1px solid rgba(203,213,225,.7);border-radius:14px;padding:16px 12px;text-align:center}
+.stat-box .val{font-size:28px;font-weight:900;color:#0f172a;line-height:1;letter-spacing:-.02em}
+.stat-box .lbl{font-size:11px;color:#64748b;margin-top:6px;text-transform:uppercase;letter-spacing:.1em;font-weight:700}
 table{width:100%;border-collapse:collapse;font-size:13px}
-th{text-align:left;color:#555;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.06em;padding:0 10px 10px;border-bottom:1px solid #2a2a2a}
-td{padding:9px 10px;border-bottom:1px solid #1e1e1e;color:#ccc;vertical-align:top}
+th{text-align:left;color:#94a3b8;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.08em;padding:0 12px 10px;border-bottom:1px solid rgba(203,213,225,.6)}
+td{padding:11px 12px;border-bottom:1px solid rgba(226,232,240,.6);color:#475569;vertical-align:top}
 tr:last-child td{border-bottom:none}
-.badge{display:inline-block;font-size:11px;font-weight:600;padding:2px 9px;border-radius:20px;white-space:nowrap}
-.badge-enroll{background:#14532d33;color:#4ade80;border:1px solid #14532d66}
-.badge-skip{background:#2a1a1a33;color:#888;border:1px solid #3a2a2a66}
-.badge-error{background:#3b0a0a33;color:#f87171;border:1px solid #7f1d1d66}
-.empty{color:#444;font-size:13px;padding:20px 0;text-align:center}
-.warn{color:#fbbf24;font-size:13px;margin-top:10px}
-.err{color:#f87171;font-size:14px;font-weight:600;margin-top:10px;padding:12px 14px;background:#3b0a0a33;border:1px solid #7f1d1d;border-radius:8px}
+.badge{display:inline-block;font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;white-space:nowrap}
+.badge-enroll{background:#ecfdf5;color:#047857;border:1px solid #6ee7b7}
+.badge-skip{background:#f1f5f9;color:#64748b;border:1px solid #e2e8f0}
+.badge-error{background:#fef2f2;color:#dc2626;border:1px solid #fecaca}
+.empty{color:#94a3b8;font-size:13px;padding:24px 0;text-align:center}
+.warn{color:#b45309;font-size:13px;margin-top:10px;font-weight:600;padding:10px 14px;background:#fff7ed;border:1px solid #fdba74;border-radius:12px}
+.err{color:#b91c1c;font-size:14px;font-weight:700;margin-top:10px;padding:12px 14px;background:#fef2f2;border:1px solid #fecaca;border-radius:12px}
 </style>
 </head>
 <body>
 <div class="logo">Powered Up AI</div>
-<div style="text-align:center;max-width:1080px;margin:0 auto 40px">
+<div style="text-align:center;max-width:1080px;margin:0 auto 36px">
   <h1>Lead Enrollment</h1>
   <p class="subtitle">Preview and enroll GHL contacts into the follow-up sequence.<br>Run a dry-run first to see what will happen, then click Run Enrollment to commit.</p>
-  <div style="display:inline-block;margin-top:12px;padding:6px 14px;background:#1e3a8a;color:#93c5fd;font-size:12px;font-weight:700;border-radius:20px;letter-spacing:.04em">
-    BUILD v8 (fast-preview) · LOADED ${new Date().toISOString().replace('T',' ').slice(0,19)} UTC
-  </div>
+  <div class="build-pill">BUILD v8 (fast-preview) · LOADED ${new Date().toISOString().replace('T',' ').slice(0,19)} UTC</div>
 </div>
 
 <div class="panel">
