@@ -986,7 +986,9 @@ async function processSilenceCheck(job) {
   const lastInbound = [...exchanges].reverse().find(e => e.direction === 'inbound');
   const lastOutbound = [...exchanges].reverse().find(e => e.direction === 'outbound');
 
-  const hasReplied = lastInbound && lastOutbound && lastInbound.timestamp > lastOutbound.timestamp;
+  // Cancel if they've replied since our last outbound — OR if they've replied at all
+  // when we haven't sent anything yet (fresh contact, no prior outbound from us).
+  const hasReplied = lastInbound && (!lastOutbound || lastInbound.timestamp > lastOutbound.timestamp);
 
   if (hasReplied) {
     updateJob(job.id, { status: 'cancelled', error: 'Contact replied' });
