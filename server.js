@@ -1887,24 +1887,7 @@ app.listen(PORT, () => {
   followups.startScheduler();
   Promise.all([bootstrapStateFromGHL(), conversations.whenReady()])
     .then(() => {
-      // Backfill variant assignments for any contacts that don't have one yet.
-      // Safe to run on every startup — only touches contacts with a null variant.
-      const all = conversations.getAll();
-      const unassigned = Object.entries(all).filter(([, c]) => !c.variant);
-      if (unassigned.length === 0) {
-        console.log('[Variants] All contacts already have a variant assigned');
-        return;
-      }
-      const counts = { A: 0, B: 0, C: 0 };
-      for (const c of Object.values(all)) {
-        if (c.variant && counts[c.variant] !== undefined) counts[c.variant]++;
-      }
-      for (const [contactId] of unassigned) {
-        const next = ['A', 'B', 'C'].slice().sort((a, b) => counts[a] - counts[b])[0];
-        conversations.update(contactId, { variant: next });
-        counts[next]++;
-      }
-      console.log(`[Variants] Backfilled ${unassigned.length} contacts — A:${counts.A} B:${counts.B} C:${counts.C}`);
+      console.log('[Bootstrap] GHL state and conversations ready.');
     })
     .catch(err => console.error('[Bootstrap] Error:', err.message));
 });
