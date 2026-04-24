@@ -2089,6 +2089,13 @@ tr:hover td{background:#18181c}
   <div class="stat-card" style="padding:8px 10px"><div class="val" id="s-sent" style="font-size:18px">—</div><div class="lbl">Sent Total</div></div>
 </div>
 
+<!-- ── Performance Stats ── -->
+<div class="panel">
+  <div class="panel-header"><div class="panel-title">Performance</div></div>
+  <p class="panel-desc">How the AI is performing across all enrolled contacts. The brain updates its analysis every 72 hours to improve future messages.</p>
+  <div id="brain-content"><div class="loading">Loading&hellip;</div></div>
+</div>
+
 <!-- ── Follow-Up Queue ── -->
 <div class="panel">
   <div class="panel-header">
@@ -2128,13 +2135,6 @@ tr:hover td{background:#18181c}
   <div class="panel-header"><div class="panel-title">API Spend Monitor</div></div>
   <p class="panel-desc">Claude API cost per contact. Each contact is capped at $1.00 — once hit, AI responses stop and all pending jobs are cancelled. Use the override button to resume a high-value prospect.</p>
   <div id="spend-content"><div class="loading">Loading&hellip;</div></div>
-</div>
-
-<!-- ── Performance Stats ── -->
-<div class="panel">
-  <div class="panel-header"><div class="panel-title">Performance</div></div>
-  <p class="panel-desc">How the AI is performing across all enrolled contacts. The brain updates its analysis every 72 hours to improve future messages.</p>
-  <div id="brain-content"><div class="loading">Loading&hellip;</div></div>
 </div>
 
 <script>
