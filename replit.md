@@ -15,16 +15,23 @@ Setting `DEV_MODE=true` in your local environment puts the server into a safe te
 - **Scheduler is disabled** — no automatic follow-up jobs fire from your local instance. Production keeps running normally.
 - **GHL sends are stubbed** — no real SMS or emails go out, no matter what you click. The console logs what *would* have been sent.
 - **Dev banner shows** — a bright orange bar across the top of the admin dashboard confirms you're in dev mode.
-- **Real data is visible** — you're reading from the production database, so all contacts, stats, and conversations are real.
+- **Real production data is visible** — when `PROD_DATABASE_URL` is also set as a Replit secret, the local server connects to the LIVE production database instead of the empty workspace database. The admin UI shows actual contacts, conversations, and stats in real time.
 
 ### How to enable it locally
-Add this line to your `.env` file (the one in the project root, never committed):
-```
-DEV_MODE=true
-```
-Then restart the workflow. You'll see a box in the console confirming dev mode is active.
+1. Add `DEV_MODE=true` to your `.env` file (the one in the project root, never committed).
+2. Add the production database connection string as a Replit secret named `PROD_DATABASE_URL` (find it in Deployments → your live deployment → Database tab). This is workspace-only — never put it in deployment secrets.
+3. Restart the workflow. You'll see two confirmation lines in the console:
+   ```
+   [DB] DEV_MODE — DATABASE_URL routed to PROD_DATABASE_URL (local server now uses the LIVE production database)
+   ╔══════════════════════════════════════════════════╗
+   ║  DEV MODE — scheduler + GHL sends are disabled   ║
+   ╚══════════════════════════════════════════════════╝
+   ```
 
-**Never set `DEV_MODE=true` in the Replit Secrets/deployment environment.** It should only exist in your local `.env`.
+### Safety guards
+- The `PROD_DATABASE_URL` override is hard-gated on `DEV_MODE === 'true'`. If `PROD_DATABASE_URL` somehow ends up in deployment secrets, production logs a warning and ignores it.
+- Even though you're connected to the live database, no SMS/email goes out (the GHL wrappers are stubbed) and the scheduler doesn't fire follow-ups from your local instance. **You can still write to the database, though** — clicking "enroll lead" or sending a test reply WILL change real production data. Be deliberate.
+- **Never set `DEV_MODE=true` in the Replit Secrets/deployment environment.** It should only exist in your local `.env`.
 
 ### What you can safely do in dev mode
 - Design and test any admin UI changes
@@ -50,7 +57,7 @@ The Replit preview pane (`/`) redirects directly to `/admin`. Add `?key=YOUR_ADM
 - `optouts.js` — opt-out keyword detection and blocklist
 
 ## Database
-Single PostgreSQL database shared between local dev and production. `DATABASE_URL` env var. Tables include: `contacts`, `brain_messages`, `winning_patterns`, `funnel_snapshots`, `followup_jobs`, `prompts`.
+PostgreSQL (Neon). The deployed app uses `DATABASE_URL`. The local workspace gets its own empty Replit-provided database by default; in dev mode (with `PROD_DATABASE_URL` set) the local server is routed to the live production DB instead. Tables include: `contacts`, `brain_messages`, `winning_patterns`, `funnel_snapshots`, `followup_jobs`, `ai_prompts`, `exchanges`, `optouts`.
 
 ## Key Environment Variables
 - `ADMIN_KEY` — protects all `/admin/*` routes and API endpoints
