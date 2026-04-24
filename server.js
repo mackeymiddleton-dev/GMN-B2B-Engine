@@ -1449,6 +1449,124 @@ app.post('/api/admin/cancel-sms-jobs', requireAdmin, (req, res) => {
   res.json({ ok: true, cancelled });
 });
 
+// ─── Admin: Enrollment Sync — fetch from GHL by tag, enroll missing contacts ──
+app.post('/api/admin/enrollment-sync', requireAdmin, async (req, res) => {
+  const { tag } = req.body || {};
+  if (!tag) return res.status(400).json({ error: 'tag is required' });
+
+  let ghlContacts;
+  try {
+    const result = await ghl.fetchContactsByTag(tag);
+    ghlContacts = result.contacts || [];
+  } catch (err) {
+    return res.status(500).json({ error: 'GHL fetch failed: ' + err.message });
+  }
+
+  if (ghlContacts.length === 0) {
+    return res.json({ ok: true, enrolled: [], skipped: [], message: `No contacts found in GHL with tag "${tag}".` });
+  }
+
+  const enrolled = [];
+  const skipped  = [];
+
+  for (const c of ghlContacts) {
+    const contactId = c.id || c.contactId;
+    if (!contactId) continue;
+
+    const firstName = c.firstName || c.first_name || '';
+    const city      = c.city || c.address?.city || '';
+    const phone     = c.phone || '';
+    const email     = c.email || '';
+    const tags      = (c.tags || []).map(t => (typeof t === 'string' ? t : t.name || '').toLowerCase());
+
+    // Skip: Disable AI tag
+    if (tags.includes('disable ai')) { skipped.push({ firstName, reason: 'disable ai tag' }); continue; }
+
+    // Skip: already booked locally
+    const existing = conversations.get(contactId);
+    if (existing?.booked) { skipped.push({ firstName, reason: 'already booked' }); continue; }
+
+    // Skip: already fully in system with pending jobs
+    const pendingJobs = followups.getAllJobs('pending');
+    const hasSilenceOrHook = pendingJobs.some(j => j.contactId === contactId &&
+      (j.type === 'silence-check' || j.type === 'hook' || j.type === 'nurture'));
+    if (existing && hasSilenceOrHook) { skipped.push({ firstName, reason: 'already enrolled' }); continue; }
+
+    // Enroll
+    conversations.ensureContact(contactId, { firstName, city, phone, email, tags });
+    conversations.update(contactId, { email, tags });
+
+    const fresh = conversations.get(contactId);
+    if (!fresh?.variant) {
+      const assignedVariant = prompts.pickVariant(conversations.getAll());
+      if (assignedVariant) conversations.update(contactId, { variant: assignedVariant });
+    }
+
+    const tz = followups.estimateTimezone(city);
+    followups.scheduleSilenceCheck(contactId, 0, '');
+
+    if (email) {
+      const emailSendAt = followups.nextEmailWindowMs(Date.now() + 5 * 60 * 1000, tz);
+      const hasEmail1 = followups.getAllJobs().some(
+        j => j.contactId === contactId && j.type === 'email-hook' && j.position === 1 &&
+             (j.status === 'pending' || j.status === 'sent')
+      );
+      if (!hasEmail1) followups.scheduleJob({ contactId, type: 'email-hook', position: 1, sendAt: emailSendAt, context: { timezone: tz } });
+    }
+
+    console.log(`[Admin] Enrollment sync: enrolled ${contactId} (${firstName})`);
+    enrolled.push({ firstName, contactId });
+  }
+
+  res.json({ ok: true, enrolled, skipped,
+    message: `Sync complete — ${enrolled.length} enrolled, ${skipped.length} skipped.` });
+});
+
+// ─── Admin: Manual enroll a single contact by GHL ID ─────────────────────────
+app.post('/api/admin/manual-enroll', requireAdmin, async (req, res) => {
+  const { contactId } = req.body || {};
+  if (!contactId) return res.status(400).json({ error: 'contactId is required' });
+
+  const ghlContact = await ghl.fetchContact(contactId);
+  if (!ghlContact) return res.status(404).json({ error: 'Contact not found in GHL. Check the ID and try again.' });
+
+  const firstName = ghlContact.firstName || ghlContact.first_name || '';
+  const city      = ghlContact.city || ghlContact.address?.city || '';
+  const phone     = ghlContact.phone || '';
+  const email     = ghlContact.email || '';
+  const tags      = (ghlContact.tags || []).map(t => (typeof t === 'string' ? t : t.name || '').toLowerCase());
+
+  if (tags.includes('disable ai')) return res.status(400).json({ error: 'Contact has "Disable AI" tag — skipping.' });
+
+  const existing = conversations.get(contactId);
+  if (existing?.booked) return res.status(400).json({ error: 'Contact is already marked as booked.' });
+
+  conversations.ensureContact(contactId, { firstName, city, phone, email, tags });
+  conversations.update(contactId, { email, tags });
+
+  const fresh = conversations.get(contactId);
+  if (!fresh?.variant) {
+    const assignedVariant = prompts.pickVariant(conversations.getAll());
+    if (assignedVariant) conversations.update(contactId, { variant: assignedVariant });
+  }
+
+  const tz = followups.estimateTimezone(city);
+  followups.scheduleSilenceCheck(contactId, 0, '');
+
+  if (email) {
+    const emailSendAt = followups.nextEmailWindowMs(Date.now() + 5 * 60 * 1000, tz);
+    const hasEmail1 = followups.getAllJobs().some(
+      j => j.contactId === contactId && j.type === 'email-hook' && j.position === 1 &&
+           (j.status === 'pending' || j.status === 'sent')
+    );
+    if (!hasEmail1) followups.scheduleJob({ contactId, type: 'email-hook', position: 1, sendAt: emailSendAt, context: { timezone: tz } });
+  }
+
+  console.log(`[Admin] Manual enroll complete for ${contactId} (${firstName})`);
+  res.json({ ok: true, firstName, variant: conversations.get(contactId)?.variant || null,
+    message: `${firstName || contactId} enrolled — initial message sends within 5 minutes.` });
+});
+
 // ─── Admin: Replay a missed inbound message ───────────────────────────────────
 app.post('/api/admin/replay-inbound', requireAdmin, async (req, res) => {
   const { contactId, messageBody } = req.body || {};
@@ -2188,8 +2306,20 @@ tr:hover td{background:#18181c}
   </div>
 
   <div style="margin-top:20px;border-top:1px solid #2a2a2a;padding-top:18px">
-    <div style="font-size:12px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Manual AI Trigger</div>
-    <div style="font-size:13px;color:#555;margin-bottom:14px">Use this if the server was down when a contact replied and the AI never responded. Search by name, confirm their message, and trigger the AI reply now.</div>
+    <div style="font-size:12px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Enrollment Sync</div>
+    <div style="font-size:13px;color:#555;margin-bottom:14px">Pulls everyone with a specific GHL tag and enrolls any who aren't in the system yet. Use this if the server was down and contacts were missed. Enter the exact tag name from GHL.</div>
+    <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end">
+      <input id="sync-tag-input" type="text" placeholder="GHL tag name (e.g. Powered Up AI)"
+        style="background:#1a1a1a;border:1px solid #333;color:#e0e0e0;padding:8px 12px;border-radius:6px;font-size:13px;width:260px;outline:none">
+      <button onclick="runEnrollmentSync()" style="background:#1a2a3a;color:#60a5fa;border:1px solid #2d4a5a;padding:8px 18px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600">Sync Now</button>
+    </div>
+    <div id="sync-status" style="font-size:13px;margin-top:10px"></div>
+    <div id="sync-results" style="font-size:12px;color:#888;margin-top:6px"></div>
+  </div>
+
+  <div style="margin-top:20px;border-top:1px solid #2a2a2a;padding-top:18px">
+    <div style="font-size:12px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Missed Reply Trigger</div>
+    <div style="font-size:13px;color:#555;margin-bottom:14px">If someone replied while the server was down and the AI never responded, search for them here and trigger the reply now.</div>
     <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end">
       <div style="position:relative">
         <input id="replay-name-input" type="text" placeholder="Search contact name…" oninput="replaySearchContacts(this.value)"
@@ -2465,6 +2595,35 @@ function switchTab(tab, btn) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   btn.classList.add('active');
   renderQueue();
+}
+
+// ── Enrollment Sync ──
+async function runEnrollmentSync() {
+  const tag = document.getElementById('sync-tag-input').value.trim();
+  const statusEl = document.getElementById('sync-status');
+  const resultsEl = document.getElementById('sync-results');
+  if (!tag) { statusEl.style.color = '#f87171'; statusEl.textContent = 'Enter a GHL tag name first.'; return; }
+  statusEl.style.color = '#888';
+  statusEl.textContent = 'Searching GHL for contacts with tag "' + tag + '"…';
+  resultsEl.textContent = '';
+  try {
+    const res = await fetch('/api/admin/enrollment-sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-key': ADMIN_KEY },
+      body: JSON.stringify({ tag })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    statusEl.style.color = '#4ade80';
+    statusEl.textContent = data.message;
+    if (data.enrolled.length > 0) {
+      resultsEl.textContent = 'Enrolled: ' + data.enrolled.map(c => c.firstName || c.contactId).join(', ');
+    }
+    if (data.enrolled.length > 0) { loadFollowups(); }
+  } catch (err) {
+    statusEl.style.color = '#f87171';
+    statusEl.textContent = 'Error: ' + err.message;
+  }
 }
 
 // ── Manual AI Trigger (replay missed inbound) ──
