@@ -1482,15 +1482,9 @@ app.post('/api/admin/enrollment-sync', requireAdmin, async (req, res) => {
     // Skip: Disable AI tag
     if (tags.includes('disable ai')) { skipped.push({ firstName, reason: 'disable ai tag' }); continue; }
 
-    // Skip: already booked locally
+    // Skip: already in our system — don't touch their schedule at all
     const existing = conversations.get(contactId);
-    if (existing?.booked) { skipped.push({ firstName, reason: 'already booked' }); continue; }
-
-    // Skip: already fully in system with pending jobs
-    const pendingJobs = followups.getAllJobs('pending');
-    const hasSilenceOrHook = pendingJobs.some(j => j.contactId === contactId &&
-      (j.type === 'silence-check' || j.type === 'hook' || j.type === 'nurture'));
-    if (existing && hasSilenceOrHook) { skipped.push({ firstName, reason: 'already enrolled' }); continue; }
+    if (existing) { skipped.push({ firstName, reason: 'already in system' }); continue; }
 
     // Enroll
     conversations.ensureContact(contactId, { firstName, city, phone, email, tags });
