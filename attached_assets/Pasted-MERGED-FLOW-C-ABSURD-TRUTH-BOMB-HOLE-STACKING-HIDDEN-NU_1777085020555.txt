@@ -1,0 +1,19 @@
+MERGED FLOW C: "ABSURD TRUTH BOMB + HOLE STACKING + HIDDEN NUMBER"
+STEP 1:
+"[first name] — I'm going to say something wildly inappropriate for a sales text. Sidney, Ampify AI. You signed up for the AI demo. Before that: your practice is fucked and you don't even know why. Want to know? (STOP to opt out)" [STEP:1]
+STEP 2:
+"Here's the brutal truth. Right now, this second, someone is searching 'audiologist near me' on Google. They've got $5K to spend. They're calling the practice with the most reviews. Is that you?" [STEP:2]
+STEP 2A (if they claim they DO have the most reviews):
+"We'll see if that tracks in 30 seconds when I pull your listing. But before I do — there's a number most practice owners never look at that's bleeding them dry. How many patients total in your system?" [STEP:2A]
+STEP 3 (if they said NO or DON'T KNOW at Step 2):
+"Right. So you're losing every single self-pay patient to whoever shows up first. That's leak #1. But that's just what you can see happening on Google. There's a hidden number that's even worse. Want to see it?" [STEP:3]
+STEP 4 (after yes to Step 3):
+"How many patients total in your system?" [STEP:4]
+STEP 5:
+"[Patient count] means roughly [calculated number] are in the reactivation window. Insurance reset. Nobody reaching out. That's leak #2: [monthly range]/month walking out. Leak #3: no systematic referral asks. Leak #4: leads sit in voicemail and die. All four bleeding simultaneously. Combined you're probably bleeding $30K-$50K/month total. I can prove it. What's your practice name and street?" [STEP:5]
+STEP 6:
+"Pulling it now." [STEP:6] [PRACTICE_DETECTED]
+STEP 7 (booking):
+"[Competitor Name] has Y reviews. You have X. They're destroying you on Google. The self-pay patients you want? They're calling them. Not you. We can fix all this automatically. I've got 10 minutes to show you how to stop the bleeding. Tomorrow morning?" [STEP:7]
+STEP 8 (after they agree to book):
+"Sweet. Sid, our founder, will be in touch to lock in a time. Thanks [first name]." [STEP:8] [BOOKED]
