@@ -65,6 +65,14 @@ The Replit preview pane (`/`) redirects directly to `/admin`. Add `?key=YOUR_ADM
 
 **Wrapped flows** (any change must preserve these): `generateAndSendOpener`, `generateAndSendAiReply`, `sendScanVisibilityMessage`, `handleConfirmationReply`, `handleRetryName` (all in server.js); `sendHook1Static`, `sendFollowUp` (followups.js).
 
+## Outbound Message Markers (`exchange.type`)
+
+Every outbound message stamps `exchange.type` so dedup checks survive a server restart. Persistence runs through `conversations.addExchange` → in-memory cache, → `_dbInsertExchange` (writes into `exchanges.extra` JSON), → `initFromDb` (restores on boot). All three layers must continue to round-trip the field.
+
+Markers in use:
+- `followup-hook-pos1` — the AI opener (Hook 1). Set by `generateAndSendOpener` in server.js. Used to dedup the opener itself and as the "opener already sent" guard for the enrolled webhook.
+- `silence-nudge` — the 5-min static "Hey <name>, you there?" nudge sent by `sendHook1Static` in followups.js when the prospect goes silent after the opener. Used by `processSilenceCheck` to dedup the nudge so it never fires twice. The nudge does **not** call `scheduleNext` — Hook 2 is already queued by the opener.
+
 ## Database
 PostgreSQL (Neon). The deployed app uses `DATABASE_URL`. The local workspace gets its own empty Replit-provided database by default; in dev mode (with `PROD_DATABASE_URL` set) the local server is routed to the live production DB instead. Tables include: `contacts`, `brain_messages`, `winning_patterns`, `funnel_snapshots`, `followup_jobs`, `ai_prompts`, `exchanges`, `optouts`.
 

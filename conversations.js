@@ -44,6 +44,12 @@ async function initFromDb() {
           body:           ex.content,
           step:           ex.step,
           conversationId: ex.extra?.conversationId || null,
+          // `type` is stored inside `extra` (e.g. 'followup-hook-pos1',
+          // 'silence-nudge'). Dedup checks across the codebase rely on this
+          // marker; without restoring it on boot, those checks always failed
+          // after a restart and let dupes through.
+          type:           ex.extra?.type || null,
+          variant:        ex.extra?.variant || null,
           timestamp:      ex.ts
         });
       }
@@ -133,7 +139,10 @@ function _dbInsertExchange(contactId, exchange) {
       exchange.direction || null,
       JSON.stringify({
         conversationId: exchange.conversationId || null,
-        variant: exchange.variant || null
+        variant: exchange.variant || null,
+        // Persist the message-class marker (e.g. 'followup-hook-pos1',
+        // 'silence-nudge') so dedup checks survive a server restart.
+        type: exchange.type || null
       })
     ]
   ).catch(err => console.error('[Conversations] DB exchange insert error:', err.message));
@@ -198,6 +207,10 @@ function addExchange(contactId, exchange) {
     step:           exchange.step || null,
     conversationId: exchange.conversationId || null,
     variant:        exchange.variant || null,
+    // Message-class marker (e.g. 'followup-hook-pos1', 'silence-nudge') —
+    // dedup checks throughout the codebase look at this field. Previously
+    // dropped silently, which made every dedup check a no-op.
+    type:           exchange.type || null,
     timestamp:      ts
   };
   _cache[contactId].exchanges.push(ex);

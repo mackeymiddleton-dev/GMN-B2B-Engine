@@ -413,9 +413,11 @@ app.post('/webhooks/ghl/inbound', async (req, res) => {
 // The AI generates the very first SMS using the contact's assigned variant
 // prompt so each variant can A/B-test its own opener wording.
 //
-// Recorded as `followup-hook-pos1` so the silence-check dedup guard treats it
-// as Hook 1 already sent. Then schedules a no-op silence check (defensive)
-// and queues Hook 2 via scheduleNext so the follow-up cadence continues.
+// Recorded as `followup-hook-pos1` (the Hook 1 marker — used by the enrolled
+// webhook to recognise that an opener has already been sent for the contact).
+// Then schedules the 5-min silence check (which fires "Hey <name>, you there?"
+// if the prospect goes silent) and queues Hook 2 via scheduleNext so the
+// follow-up cadence continues.
 
 // In-progress guard — protects against duplicate enrollment webhooks racing
 // before the first opener's `followup-hook-pos1` exchange has been persisted.
@@ -534,8 +536,9 @@ async function generateAndSendOpener(contactId) {
     brain.recordOutbound(contactId, openerText, detectedStep ?? 0,
       { message_type: 'followup-sms', messageClass: 'hook-1', position: 1, variant });
 
-    // Defensive silence-check (will be a no-op due to followup-hook-pos1
-    // dedup), then queue Hook 2 so the cadence continues if no reply.
+    // Schedule the 5-min "Hey <name>, you there?" silence check (fires only
+    // if the prospect doesn't reply), then queue Hook 2 so the cadence
+    // continues if they stay silent.
     const tz = followups.estimateTimezone(contact.city || '');
     followups.scheduleSilenceCheck(contactId, detectedStep ?? 0, openerText);
     followups.scheduleNext(contactId, 1, detectedStep ?? 0, openerText, tz);

@@ -634,22 +634,27 @@ async function sendHook1Static(job, contact) {
       return;
     }
 
+    // Tagged as `silence-nudge` (not `followup-hook-pos1`) so it stays
+    // INDEPENDENT from the AI opener. The opener uses `followup-hook-pos1`
+    // for its own dedup; if we shared the marker, the opener would suppress
+    // this 5-minute "you there?" nudge entirely. Keeping markers separate
+    // lets both fire in sequence: opener first, then this nudge 5 min later.
     conversations.addExchange(job.contactId, {
       direction: 'outbound',
       body: hookText,
       step: contact.currentStep ?? null,
       conversationId: null,
-      type: 'followup-hook-pos1'
+      type: 'silence-nudge'
     });
 
     brain.recordOutbound(job.contactId, hookText, contact.currentStep ?? null,
-      { message_type: 'followup-sms', messageClass: 'hook-1', position: 1 });
+      { message_type: 'followup-sms', messageClass: 'silence-nudge', position: 1 });
 
-    const tz = job.context?.timezone || getContactTimezone(job.contactId);
     updateJob(job.id, { status: 'sent', sentAt: Date.now() });
-    scheduleNext(job.contactId, 1, contact.currentStep ?? null, hookText, tz);
+    // Do NOT call scheduleNext here — the opener already queued Hook 2.
+    // Calling it again would create a duplicate Hook 2 job for this contact.
 
-    console.log(`[Followups] Hook 1 (static) sent to ${job.contactId}: "${hookText}"`);
+    console.log(`[Followups] Silence nudge ("you there?") sent to ${job.contactId}: "${hookText}"`);
   } finally {
     _lock.release();
   }
@@ -1015,16 +1020,18 @@ async function processSilenceCheck(job) {
     return;
   }
 
-  // Only ever send "Hey, you there?" once per conversation — even if there
-  // are multiple silence-check jobs queued across multiple outbound turns.
-  const alreadySentHook1 = exchanges.some(e => e.type === 'followup-hook-pos1');
-  if (alreadySentHook1) {
-    updateJob(job.id, { status: 'cancelled', error: 'Hook 1 already sent once this conversation' });
-    console.log(`[Followups] Silence check for ${job.contactId}: Hook 1 already sent — skipping repeat`);
+  // Only ever send "Hey, you there?" once per conversation. We dedupe on
+  // `silence-nudge` (the static nudge's own marker) — NOT `followup-hook-pos1`,
+  // which the AI opener uses. If we deduped on the opener marker, this nudge
+  // would never fire after enrollment because the opener is always sent first.
+  const alreadySentNudge = exchanges.some(e => e.type === 'silence-nudge');
+  if (alreadySentNudge) {
+    updateJob(job.id, { status: 'cancelled', error: 'Silence nudge already sent once this conversation' });
+    console.log(`[Followups] Silence check for ${job.contactId}: nudge already sent — skipping repeat`);
     return;
   }
 
-  console.log(`[Followups] Silence check for ${job.contactId}: silent — sending Hook 1 (static)`);
+  console.log(`[Followups] Silence check for ${job.contactId}: silent — sending "you there?" nudge`);
   await sendHook1Static(job, contact);
 
   // Schedule Email #1 in parallel (next available email window)
