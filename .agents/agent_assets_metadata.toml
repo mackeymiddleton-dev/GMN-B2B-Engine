@@ -24,3 +24,9 @@ id = "hXXzF1FrYEloAyxGzJ6B4"
 uri = "file://attached_assets/variant_draft_reverse_psychology_holes.txt"
 type = "text"
 title = "Reverse-Psychology + Hole Stacking — Production-Ready Draft"
+
+[[outputs]]
+id = "KVeJ12tn5pkAE-938sBTz"
+uri = "file://attached_assets/variant_draft_competitor_attack_leaks.txt"
+type = "text"
+title = "Competitor Attack + Leak Stacking — Production-Ready Draft"
