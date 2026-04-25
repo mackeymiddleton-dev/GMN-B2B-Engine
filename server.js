@@ -39,6 +39,7 @@ const prompts = require('./prompts');
 const { runEnrollment } = require('./enrollment');
 const spend = require('./spend');
 const optouts = require('./optouts');
+const outboundLock = require('./outbound-lock');
 
 // ─── Dev Mode ─────────────────────────────────────────────────────────────────
 // Set DEV_MODE=true in your local .env to disable the scheduler and GHL sends.
@@ -242,6 +243,8 @@ async function sendScanVisibilityMessage(contactId, resolvedConvId, sr) {
     msg = `One more thing — just ran your visibility scan. There are gaps in your local search coverage — people looking for audiologists a few miles out aren't finding you.`;
   }
 
+  // Race guard: same SEND→PERSIST window as every other outbound flow.
+  const _lock = outboundLock.acquire(contactId);
   try {
     await ghl.sendMessage(contactId, msg);
     conversations.addExchange(contactId, {
@@ -255,6 +258,8 @@ async function sendScanVisibilityMessage(contactId, resolvedConvId, sr) {
     console.log(`[ScanWatch] Visibility follow-up sent to ${contactId}`);
   } catch (err) {
     console.error(`[ScanWatch] Failed to send visibility message for ${contactId}:`, err.message);
+  } finally {
+    _lock.release();
   }
 }
 
@@ -424,6 +429,12 @@ async function generateAndSendOpener(contactId) {
     return;
   }
   _openerInProgress.add(contactId);
+  // Acquire the outbound lock so any inbound webhook for this contact arriving
+  // mid-flight waits for the SEND→PERSIST window to fully close before reading
+  // state. Without this, a fast prospect can reply between ghl.sendMessage and
+  // conversations.addExchange, causing the inbound handler to see "no opener
+  // sent yet" and re-generate Step 1.
+  const _lock = outboundLock.acquire(contactId);
   try {
     const contact = conversations.get(contactId);
     if (!contact) {
@@ -534,6 +545,7 @@ async function generateAndSendOpener(contactId) {
     console.error(`[Opener] Failed for ${contactId}:`, err.message);
   } finally {
     _openerInProgress.delete(contactId);
+    _lock.release();
   }
 }
 
@@ -812,6 +824,14 @@ function recoverStateFromHistory(contactId, fresh, rawGhlMessages) {
 // ─── Webhook Handler ──────────────────────────────────────────────────────────
 
 async function handleInbound({ contactId, conversationId, messageBody, firstName, city, phone }) {
+  // ── 0. Wait for any in-flight outbound for this contact to fully settle ──────
+  // The opener / AI reply / confirmation / follow-up flows all do SEND→PERSIST.
+  // If a prospect replies inside that window (under ~5s), the inbound webhook
+  // can race ahead of the persist call and read stale state — leading to
+  // duplicate sends. Awaiting the outbound lock guarantees we see the world
+  // exactly as it exists post-persist.
+  await outboundLock.waitForSettle(contactId);
+
   // ── 1. Fetch authoritative contact info from GHL ─────────────────────────────
   const ghlContact = await ghl.fetchContact(contactId);
 
@@ -925,6 +945,11 @@ async function handleInbound({ contactId, conversationId, messageBody, firstName
 //   • scheduleAiResponseAfterResearch — to generate the next scripted step
 //                     once research/scan completes (post-bridge / post-YES)
 async function generateAndSendAiReply(contactId, resolvedConvId, opts = {}) {
+  // Acquire the outbound lock so any concurrent inbound webhook for this
+  // contact (or another reply path like scheduleAiResponseAfterResearch)
+  // waits for SEND→PERSIST to fully close before reading state.
+  const _lock = outboundLock.acquire(contactId);
+  try {
   let fresh = opts.fresh || conversations.get(contactId);
   if (!fresh) {
     console.log(`[AiGen] No contact record for ${contactId} — skipping`);
@@ -1142,6 +1167,9 @@ async function generateAndSendAiReply(contactId, resolvedConvId, opts = {}) {
       }
     }
   }
+  } finally {
+    _lock.release();
+  }
 }
 
 // ─── Address Confirmation Helpers ─────────────────────────────────────────────
@@ -1176,6 +1204,8 @@ function startResearchAndScan(contactId, practiceName, practiceStreet, city, con
 }
 
 async function handleConfirmationReply(contactId, messageBody, contact, resolvedConvId) {
+  const _lock = outboundLock.acquire(contactId);
+  try {
   const pending = contact.confirmationPending;
   const msg = messageBody.toLowerCase().trim();
 
@@ -1207,9 +1237,14 @@ async function handleConfirmationReply(contactId, messageBody, contact, resolved
   console.log(`[Webhook] Practice confirmed for ${contactId}: ${pending.name}`);
   startResearchAndScan(contactId, pending.name, contact.practiceStreet || '', pending.city, pending.placeId);
   scheduleAiResponseAfterResearch(contactId, resolvedConvId, { skipReplyGuard: true });
+  } finally {
+    _lock.release();
+  }
 }
 
 async function handleRetryName(contactId, messageBody, contact, resolvedConvId) {
+  const _lock = outboundLock.acquire(contactId);
+  try {
   const city = contact.practiceCity || contact.city || '';
   // Use the full reply as the search query — prospect may give "Name on Street" or just a name
   const retryInput = messageBody.trim();
@@ -1248,6 +1283,9 @@ async function handleRetryName(contactId, messageBody, contact, resolvedConvId) 
   // the next turn once research completes.
   startResearchAndScan(contactId, retryInput, '', city, null);
   scheduleAiResponseAfterResearch(contactId, resolvedConvId, { skipReplyGuard: true });
+  } finally {
+    _lock.release();
+  }
 }
 
 // ─── Message History Builders ─────────────────────────────────────────────────

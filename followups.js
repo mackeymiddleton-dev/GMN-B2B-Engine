@@ -7,6 +7,7 @@ const prompts = require('./prompts');
 const conversations = require('./conversations');
 const ghl = require('./ghl');
 const brain = require('./brain');
+const outboundLock = require('./outbound-lock');
 const { fetchCompetitorVelocity, findReferralSources, refreshRecentReviews, fetchReviewCount } = require('./research');
 
 const _pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
@@ -612,93 +613,111 @@ async function sendHook1Static(job, contact) {
   const firstName = contact.firstName || '';
   const hookText = firstName ? `Hey ${firstName}, you there?` : 'Hey, you there?';
 
-  let sendResult;
+  // Acquire the outbound lock so an inbound webhook arriving between SEND and
+  // PERSIST waits for state to settle before reading it. Without this, a fast
+  // "you there?" → "yes!" round-trip can race ahead of addExchange and cause
+  // duplicate sends or wrong-step replies.
+  const _lock = outboundLock.acquire(job.contactId);
   try {
-    sendResult = await ghl.sendMessage(job.contactId, hookText);
-  } catch (err) {
-    console.error(`[Followups] GHL send error (Hook 1) for ${job.contactId}:`, err.message);
-    updateJob(job.id, { status: 'skipped', error: `GHL: ${err.message}` });
-    return;
+    let sendResult;
+    try {
+      sendResult = await ghl.sendMessage(job.contactId, hookText);
+    } catch (err) {
+      console.error(`[Followups] GHL send error (Hook 1) for ${job.contactId}:`, err.message);
+      updateJob(job.id, { status: 'skipped', error: `GHL: ${err.message}` });
+      return;
+    }
+
+    if (!sendResult) {
+      console.error(`[Followups] GHL returned null (Hook 1) for ${job.contactId} — marking skipped`);
+      updateJob(job.id, { status: 'skipped', error: 'GHL returned null (send failed)' });
+      return;
+    }
+
+    conversations.addExchange(job.contactId, {
+      direction: 'outbound',
+      body: hookText,
+      step: contact.currentStep ?? null,
+      conversationId: null,
+      type: 'followup-hook-pos1'
+    });
+
+    brain.recordOutbound(job.contactId, hookText, contact.currentStep ?? null,
+      { message_type: 'followup-sms', messageClass: 'hook-1', position: 1 });
+
+    const tz = job.context?.timezone || getContactTimezone(job.contactId);
+    updateJob(job.id, { status: 'sent', sentAt: Date.now() });
+    scheduleNext(job.contactId, 1, contact.currentStep ?? null, hookText, tz);
+
+    console.log(`[Followups] Hook 1 (static) sent to ${job.contactId}: "${hookText}"`);
+  } finally {
+    _lock.release();
   }
-
-  if (!sendResult) {
-    console.error(`[Followups] GHL returned null (Hook 1) for ${job.contactId} — marking skipped`);
-    updateJob(job.id, { status: 'skipped', error: 'GHL returned null (send failed)' });
-    return;
-  }
-
-  conversations.addExchange(job.contactId, {
-    direction: 'outbound',
-    body: hookText,
-    step: contact.currentStep ?? null,
-    conversationId: null,
-    type: 'followup-hook-pos1'
-  });
-
-  brain.recordOutbound(job.contactId, hookText, contact.currentStep ?? null,
-    { message_type: 'followup-sms', messageClass: 'hook-1', position: 1 });
-
-  const tz = job.context?.timezone || getContactTimezone(job.contactId);
-  updateJob(job.id, { status: 'sent', sentAt: Date.now() });
-  scheduleNext(job.contactId, 1, contact.currentStep ?? null, hookText, tz);
-
-  console.log(`[Followups] Hook 1 (static) sent to ${job.contactId}: "${hookText}"`);
 }
 
 // ─── AI-Generated Send (Hooks 2–5 + Nurture) ─────────────────────────────────
 
 async function sendFollowUp(job, contact, position) {
-  const freshContact = conversations.get(job.contactId) || contact;
-
-  let hookText = '';
+  // Acquire the outbound lock so any inbound webhook arriving mid-send waits
+  // for our SEND→PERSIST window to fully close. Otherwise a fast prospect
+  // reply can be processed against stale state and trigger duplicate or
+  // wrong-step responses.
+  const _lock = outboundLock.acquire(job.contactId);
   try {
-    hookText = await generateHookMessage(freshContact, position, job.type, job.contactId);
-  } catch (err) {
-    console.error(`[Followups] Claude error for ${job.contactId}:`, err.message);
-    updateJob(job.id, { status: 'skipped', error: err.message });
-    return;
+    const freshContact = conversations.get(job.contactId) || contact;
+
+    let hookText = '';
+    try {
+      hookText = await generateHookMessage(freshContact, position, job.type, job.contactId);
+    } catch (err) {
+      console.error(`[Followups] Claude error for ${job.contactId}:`, err.message);
+      updateJob(job.id, { status: 'skipped', error: err.message });
+      return;
+    }
+
+    if (!hookText) {
+      updateJob(job.id, { status: 'skipped', error: 'Empty message generated' });
+      return;
+    }
+
+    let sendResult;
+    try {
+      sendResult = await ghl.sendMessage(job.contactId, hookText);
+    } catch (err) {
+      console.error(`[Followups] GHL send error for ${job.contactId}:`, err.message);
+      updateJob(job.id, { status: 'skipped', error: `GHL: ${err.message}` });
+      return;
+    }
+
+    if (!sendResult) {
+      console.error(`[Followups] GHL returned null for ${job.contactId} — marking skipped`);
+      updateJob(job.id, { status: 'skipped', error: 'GHL returned null (send failed)' });
+      return;
+    }
+
+    conversations.addExchange(job.contactId, {
+      direction: 'outbound',
+      body: hookText,
+      step: freshContact.currentStep ?? null,
+      conversationId: null,
+      type: `followup-${job.type}-pos${position}`
+    });
+
+    const messageClass = job.type === 'nurture' || position >= 4 ? 'nurture'
+      : position === 3 ? 'hook-3'
+      : position === 2 ? 'hook-2'
+      : 'hook-1';
+    brain.recordOutbound(job.contactId, hookText, freshContact.currentStep ?? null,
+      { message_type: 'followup-sms', messageClass, position });
+
+    const tz = job.context?.timezone || getContactTimezone(job.contactId);
+    updateJob(job.id, { status: 'sent', sentAt: Date.now() });
+    scheduleNext(job.contactId, position, freshContact.currentStep ?? null, hookText, tz);
+
+    console.log(`[Followups] ${job.type} pos=${position} sent to ${job.contactId}: "${hookText.slice(0, 80)}"`);
+  } finally {
+    _lock.release();
   }
-
-  if (!hookText) {
-    updateJob(job.id, { status: 'skipped', error: 'Empty message generated' });
-    return;
-  }
-
-  let sendResult;
-  try {
-    sendResult = await ghl.sendMessage(job.contactId, hookText);
-  } catch (err) {
-    console.error(`[Followups] GHL send error for ${job.contactId}:`, err.message);
-    updateJob(job.id, { status: 'skipped', error: `GHL: ${err.message}` });
-    return;
-  }
-
-  if (!sendResult) {
-    console.error(`[Followups] GHL returned null for ${job.contactId} — marking skipped`);
-    updateJob(job.id, { status: 'skipped', error: 'GHL returned null (send failed)' });
-    return;
-  }
-
-  conversations.addExchange(job.contactId, {
-    direction: 'outbound',
-    body: hookText,
-    step: freshContact.currentStep ?? null,
-    conversationId: null,
-    type: `followup-${job.type}-pos${position}`
-  });
-
-  const messageClass = job.type === 'nurture' || position >= 4 ? 'nurture'
-    : position === 3 ? 'hook-3'
-    : position === 2 ? 'hook-2'
-    : 'hook-1';
-  brain.recordOutbound(job.contactId, hookText, freshContact.currentStep ?? null,
-    { message_type: 'followup-sms', messageClass, position });
-
-  const tz = job.context?.timezone || getContactTimezone(job.contactId);
-  updateJob(job.id, { status: 'sent', sentAt: Date.now() });
-  scheduleNext(job.contactId, position, freshContact.currentStep ?? null, hookText, tz);
-
-  console.log(`[Followups] ${job.type} pos=${position} sent to ${job.contactId}: "${hookText.slice(0, 80)}"`);
 }
 
 // ─── Email Stop / Defer Guards ────────────────────────────────────────────────

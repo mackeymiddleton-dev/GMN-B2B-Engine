@@ -55,6 +55,15 @@ The Replit preview pane (`/`) redirects directly to `/admin`. Add `?key=YOUR_ADM
 - `enrollment.js` — AI-powered conversation history analysis for re-enrollment
 - `spend.js` — per-contact Claude API spend tracking
 - `optouts.js` — opt-out keyword detection and blocklist
+- `outbound-lock.js` — race-condition guard for SEND→PERSIST window (see below)
+
+## Race-Condition Protection (outbound-lock.js)
+
+**The bug:** Every outbound message is sent then persisted (`ghl.sendMessage` → `conversations.addExchange`). If a fast prospect replies between those two steps, the inbound webhook reads stale state and Claude regenerates the same message — duplicate sends.
+
+**The fix:** Every outbound flow acquires a per-contactId lock around its SEND→PERSIST critical section. `handleInbound` calls `await outboundLock.waitForSettle(contactId)` at the very top before reading any state. Concurrent outbounds for the same contact chain via `Promise.all` so an inbound waits for ALL in-flight outbounds, not just the latest. Stuck locks self-clear on 60s timeout to prevent recurring delays.
+
+**Wrapped flows** (any change must preserve these): `generateAndSendOpener`, `generateAndSendAiReply`, `sendScanVisibilityMessage`, `handleConfirmationReply`, `handleRetryName` (all in server.js); `sendHook1Static`, `sendFollowUp` (followups.js).
 
 ## Database
 PostgreSQL (Neon). The deployed app uses `DATABASE_URL`. The local workspace gets its own empty Replit-provided database by default; in dev mode (with `PROD_DATABASE_URL` set) the local server is routed to the live production DB instead. Tables include: `contacts`, `brain_messages`, `winning_patterns`, `funnel_snapshots`, `followup_jobs`, `ai_prompts`, `exchanges`, `optouts`.
