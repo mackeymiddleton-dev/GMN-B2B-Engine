@@ -1100,10 +1100,54 @@ async function processJob(job) {
 
 // ─── Scheduler ────────────────────────────────────────────────────────────────
 
+// Pause state must SURVIVE server restarts (deploys, crashes, idle wake-ups).
+// Previously this lived only in memory, so any restart silently wiped the
+// admin's pause action — leading to inconsistent button state on refresh.
+// We persist it to a tiny app_settings key/value table so the choice sticks.
 let _paused = false;
 
-function pauseScheduler()  { _paused = true;  console.log('[Followups] Scheduler PAUSED — no jobs will fire'); }
-function resumeScheduler() { _paused = false; console.log('[Followups] Scheduler RESUMED'); }
+async function _initPauseStateFromDb() {
+  try {
+    await _pool.query(`
+      CREATE TABLE IF NOT EXISTS app_settings (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      )
+    `);
+    const { rows } = await _pool.query(
+      `SELECT value FROM app_settings WHERE key = 'paused' LIMIT 1`
+    );
+    if (rows.length > 0) {
+      _paused = rows[0].value === 'true';
+      console.log(`[Followups] Pause state restored from DB: ${_paused ? 'PAUSED' : 'running'}`);
+    } else {
+      console.log('[Followups] No persisted pause state — defaulting to running');
+    }
+  } catch (err) {
+    console.error('[Followups] Pause state init error:', err.message);
+  }
+}
+
+function _persistPauseState(paused) {
+  _pool.query(
+    `INSERT INTO app_settings (key, value) VALUES ('paused', $1)
+     ON CONFLICT (key) DO UPDATE SET value = $1`,
+    [paused ? 'true' : 'false']
+  ).catch(err => console.error('[Followups] Pause state persist error:', err.message));
+}
+
+_initPauseStateFromDb();
+
+function pauseScheduler()  {
+  _paused = true;
+  _persistPauseState(true);
+  console.log('[Followups] Scheduler PAUSED — no jobs will fire');
+}
+function resumeScheduler() {
+  _paused = false;
+  _persistPauseState(false);
+  console.log('[Followups] Scheduler RESUMED');
+}
 function isPaused()        { return _paused; }
 
 /**
