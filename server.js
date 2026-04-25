@@ -1926,9 +1926,9 @@ app.post('/api/admin/backfill-variants', requireAdmin, (req, res) => {
   const unassigned = Object.entries(all).filter(([, c]) => !c.variant);
   if (unassigned.length === 0) return res.json({ ok: true, assigned: 0, message: 'All contacts already have variants' });
 
-  const variants = ['A', 'B', 'C'];
+  const variants = ['A', 'B', 'C', 'D'];
   // Count current assignments to continue the round-robin fairly
-  const counts = { A: 0, B: 0, C: 0 };
+  const counts = { A: 0, B: 0, C: 0, D: 0 };
   for (const c of Object.values(all)) {
     if (c.variant && counts[c.variant] !== undefined) counts[c.variant]++;
   }
@@ -1942,7 +1942,7 @@ app.post('/api/admin/backfill-variants', requireAdmin, (req, res) => {
     assigned++;
   }
 
-  console.log(`[Variants] Backfilled ${assigned} contacts. Distribution: A=${counts.A} B=${counts.B} C=${counts.C}`);
+  console.log(`[Variants] Backfilled ${assigned} contacts. Distribution: A=${counts.A} B=${counts.B} C=${counts.C} D=${counts.D}`);
   res.json({ ok: true, assigned, distribution: counts });
 });
 
@@ -1994,7 +1994,7 @@ app.post('/api/admin/reset-variants', requireAdmin, async (req, res) => {
 
 app.post('/admin/variants/:variant/enabled', requireAdmin, (req, res) => {
   const { variant } = req.params;
-  if (!['A', 'B', 'C'].includes(variant)) return res.status(400).json({ error: 'Invalid variant. Must be A, B, or C.' });
+  if (!['A', 'B', 'C', 'D'].includes(variant)) return res.status(400).json({ error: 'Invalid variant. Must be A, B, C, or D.' });
   const { enabled } = req.body;
   if (typeof enabled !== 'boolean') return res.status(400).json({ error: 'enabled field must be a boolean.' });
   try {
@@ -2015,7 +2015,8 @@ app.get('/api/brain/variants', requireAdmin, (req, res) => {
 
     const counts = { A: { assigned: 0, repliedOnce: 0, replied4: 0, booked: 0 },
                      B: { assigned: 0, repliedOnce: 0, replied4: 0, booked: 0 },
-                     C: { assigned: 0, repliedOnce: 0, replied4: 0, booked: 0 } };
+                     C: { assigned: 0, repliedOnce: 0, replied4: 0, booked: 0 },
+                     D: { assigned: 0, repliedOnce: 0, replied4: 0, booked: 0 } };
 
     for (const c of Object.values(allContacts)) {
       if (!c.variant || !counts[c.variant]) continue;
@@ -2029,7 +2030,7 @@ app.get('/api/brain/variants', requireAdmin, (req, res) => {
 
     const pct = (n, d) => d > 0 ? Math.round((n / d) * 100) : null;
 
-    const variants = ['A', 'B', 'C'].map(v => {
+    const variants = ['A', 'B', 'C', 'D'].map(v => {
       const vc = counts[v];
       return {
         variant:          v,
@@ -2386,7 +2387,7 @@ function _normalizePlaygroundVariant(variant, customPrompt) {
     return { variant: 'CUSTOM', customPrompt: trimmedCustom };
   }
   if (v === 'CUSTOM') return { error: 'customPrompt is required when variant is CUSTOM' };
-  if (!['A', 'B', 'C'].includes(v)) return { error: 'variant must be A, B, C, or CUSTOM' };
+  if (!['A', 'B', 'C', 'D'].includes(v)) return { error: 'variant must be A, B, C, D, or CUSTOM' };
   return { variant: v };
 }
 
@@ -2904,8 +2905,8 @@ app.listen(PORT, () => {
     // Seed any variant prompt keys that aren't in the DB yet (ensures DB is
     // always the full source of truth from day one, no lazy-init surprises).
     const variantKeys = [
-      'conversationPrompt.A', 'conversationPrompt.B', 'conversationPrompt.C',
-      'conversationPrompt.A.enabled', 'conversationPrompt.B.enabled', 'conversationPrompt.C.enabled'
+      'conversationPrompt.A', 'conversationPrompt.B', 'conversationPrompt.C', 'conversationPrompt.D',
+      'conversationPrompt.A.enabled', 'conversationPrompt.B.enabled', 'conversationPrompt.C.enabled', 'conversationPrompt.D.enabled'
     ];
     for (const key of variantKeys) {
       const val = prompts.get(key);
@@ -3745,7 +3746,7 @@ async function loadBrain() {
           const variantColors = { A: '#748ffc', B: '#f59e0b', C: '#34d399' };
           variantRows = \`
             <div style="margin-top:24px;border-top:1px solid #1e1e1e;padding-top:20px">
-              <div style="font-size:12px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.06em;margin-bottom:14px">A/B/C Script Variant Performance</div>
+              <div style="font-size:12px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.06em;margin-bottom:14px">A/B/C/D Script Variant Performance</div>
               <div class="table-wrap"><table class="perf-table">
                 <thead><tr>
                   <th>Variant</th><th>Enabled</th><th>Contacts</th><th>Replied Once</th><th>4+ Replies</th><th>Booking Rate</th>
@@ -3884,7 +3885,7 @@ function buildPromptEditorPage(adminKey, promptsList) {
   })));
 
   // Build variant data: text + enabled flag for A/B/C
-  const variantsJson = JSON.stringify(['A', 'B', 'C'].map(v => ({
+  const variantsJson = JSON.stringify(['A', 'B', 'C', 'D'].map(v => ({
     variant: v,
     text: prompts.get(`conversationPrompt.${v}`) || prompts.get('conversationPrompt'),
     enabled: prompts.get(`conversationPrompt.${v}.enabled`) === 'true'
@@ -4021,8 +4022,8 @@ let _activeTab = 'A';
 
 function renderVariantSection() {
   const container = document.getElementById('variant-section');
-  const tabsHtml = ['A','B','C'].map(v =>
-    \`<button class="variant-tab\${v===_activeTab?' active':''}" onclick="setTab('\${v}')">\${v === 'A' ? 'Variant A' : v === 'B' ? 'Variant B' : 'Variant C'}</button>\`
+  const tabsHtml = ['A','B','C','D'].map(v =>
+    \`<button class="variant-tab\${v===_activeTab?' active':''}" onclick="setTab('\${v}')">Variant \${v}</button>\`
   ).join('');
 
   const panelsHtml = VARIANTS.map(vd => {
@@ -4054,10 +4055,10 @@ function renderVariantSection() {
 
   container.innerHTML = \`
     <div style="max-width:820px;margin:0 auto 0;padding-bottom:12px;border-bottom:1px solid rgba(203,213,225,.6);margin-bottom:20px">
-      <span style="font-size:12px;font-weight:800;letter-spacing:.12em;color:#64748b;text-transform:uppercase">Discovery Script Variants (A / B / C)</span>
+      <span style="font-size:12px;font-weight:800;letter-spacing:.12em;color:#64748b;text-transform:uppercase">Discovery Script Variants (A / B / C / D)</span>
     </div>
     <div class="variant-section" id="variant-card">
-      <div class="variant-section-title">A/B/C Discovery Script Testing</div>
+      <div class="variant-section-title">A/B/C/D Discovery Script Testing</div>
       <div class="variant-section-desc">Each new contact is permanently assigned one variant. Edit scripts independently below, then enable or disable each variant from the rotation.</div>
       <div class="variant-tabs">\${tabsHtml}</div>
       <div id="variant-panels">\${panelsHtml}</div>

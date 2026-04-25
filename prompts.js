@@ -90,10 +90,12 @@ const DEFAULTS = {
   'conversationPrompt.A': config.conversationPrompt,
   'conversationPrompt.B': config.conversationPrompt,
   'conversationPrompt.C': config.conversationPrompt,
+  'conversationPrompt.D': config.conversationPrompt,
   // Enabled flags for each variant ('true' / 'false')
   'conversationPrompt.A.enabled': 'true',
   'conversationPrompt.B.enabled': 'true',
   'conversationPrompt.C.enabled': 'true',
+  'conversationPrompt.D.enabled': 'false',
   systemPrompt: config.systemPrompt,
   'followup.hook': config.followUpPrompts?.hook || '',
   'followup.nurture': config.followUpPrompts?.nurture || '',
@@ -226,12 +228,12 @@ function reset(name) {
  * Return the list of currently-enabled variants (['A'], ['A','B'], etc.)
  */
 function getEnabledVariants() {
-  return ['A', 'B', 'C'].filter(v => get(`conversationPrompt.${v}.enabled`) === 'true');
+  return ['A', 'B', 'C', 'D'].filter(v => get(`conversationPrompt.${v}.enabled`) === 'true');
 }
 
 /**
  * Set enabled state for a specific variant.
- * @param {string} variant — 'A', 'B', or 'C'
+ * @param {string} variant — 'A', 'B', 'C', or 'D'
  * @param {boolean} enabled
  */
 function setVariantEnabled(variant, enabled) {
@@ -251,7 +253,7 @@ function pickVariant(allContacts) {
   const enabled = getEnabledVariants();
   if (enabled.length === 0) return null;
   if (enabled.length === 1) return enabled[0];
-  const counts = { A: 0, B: 0, C: 0 };
+  const counts = { A: 0, B: 0, C: 0, D: 0 };
   for (const c of Object.values(allContacts)) {
     if (c.variant && counts[c.variant] !== undefined) counts[c.variant]++;
   }
