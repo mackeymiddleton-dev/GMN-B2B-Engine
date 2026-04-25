@@ -114,13 +114,17 @@ async function fetchContactsByTag(tag, signal) {
   // GHL server-side tag search — single request, no pagination needed.
   // Correct format confirmed from 422 error responses:
   //   field = "tags", operator = "contains" (not CONTAINS_ANY/in), pageLimit (not limit/pageSize)
+  //
+  // IMPORTANT: GHL stores tags as lowercase but its search filter is case-sensitive,
+  // so we send the lowercased tag to match. Without this, an admin typing "Ampify"
+  // gets zero results even though "ampify" matches 55 contacts.
   try {
     const searchRes = await fetch(`${BASE}/contacts/search?locationId=${encodeURIComponent(locationId)}`, {
       method: 'POST',
       headers: headers(),
       body: JSON.stringify({
         locationId,
-        filters: [{ field: 'tags', operator: 'contains', value: tag }],
+        filters: [{ field: 'tags', operator: 'contains', value: tagLower }],
         pageLimit: 200,
         page: 1
       }),
