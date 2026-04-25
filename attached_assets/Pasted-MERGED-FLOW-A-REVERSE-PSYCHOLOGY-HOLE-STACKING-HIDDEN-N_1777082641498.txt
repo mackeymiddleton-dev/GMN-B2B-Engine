@@ -1,0 +1,15 @@
+MERGED FLOW A: "REVERSE PSYCHOLOGY + HOLE STACKING + HIDDEN NUMBER"
+STEP 1: "[first name] — Sidney, Ampify AI. You signed up for the AI demo. Heads up: this probably won't work for your practice. Most audiologists can't handle what I'm about to show you. Still want to see it? (STOP to opt out)" [STEP:1]
+STEP 2: "Fair warning. What I'm about to tell you requires you to admit you've been leaving money on the table for years. Most practice owners get defensive and bail at this point. You sure you want to keep going?" [STEP:2]
+STEP 3: "Alright. Every audiologist who sits on Google right now and searches their own practice name — do it real quick. What position do you show up? First page? Second? Not there at all?" [STEP:3]
+STEP 3A (if they say "I'm #1" or "first page"): "Got it. That's just because Google knows it's you searching. Practice owners get this completely wrong. What you're seeing and what the average Joe sees are two different things. I'll show you the real numbers in a second, but first — something that's going to make you feel wild. How many patients total in your database?" [STEP:3A]
+STEP 3B (if they say second page/not there): "Right. So when someone searches 'audiologist near me' right now, you're invisible. They're calling your competitors instead. Those are self-pay patients with money. Going somewhere else. Every single day. But that's just hole #1. Want to see hole #2?" [STEP:3B]
+[After 3B, if they say yes]: "How many patients total in your database?" [STEP:3C]
+STEP 4: "Okay so [patient count] means roughly [calculated number] haven't been back in 3+ years. Insurance reset. Benefits sitting there. Nobody's texting them so they're either gone or going. That's hole #2. But here's the thing — that's just what you can see. There's a hidden number that's even worse. Want to see it?" [STEP:4]
+STEP 5 (after they say yes): "The hidden number is how many self-pay patients you're losing to competitors every single month. Hole #3: no systematic referral asks. Hole #4: leads dying in voicemail. All four bleeding at once. I can show you the exact damage but I need your practice name and street to pull the data. What are they?" [STEP:5]
+STEP 6: "Got it." [STEP:6] [PRACTICE_DETECTED]
+STEP 7 (booking - after system shows competitor data):
+If data available: "You've got X reviews. [Competitor] has Y. They're showing up first. Plus if you zoom out to x area you show up number 8, that’s two pages deep. The self-pay patients you want? They’re 100% calling [Competitor]. Not you. Most practice owners can't commit 10 minutes to fix this. Can you? Want to have a chat tomorrow morning?" [STEP:7]
+If no data: "Most practice owners can't commit 10 minutes to fix this. Can you? Tomorrow or Thursday?" [STEP:7]
+STEP 8 (if they book): "Done. Sid, our founder, is gonna jump in and sort out a time [first name]." [STEP:8] [BOOKED]
+STEP 8 ALT (if questions): [Answer in 1-2 sentences] "Rest is clearer live. Tomorrow or Thursday?" [STEP:8]

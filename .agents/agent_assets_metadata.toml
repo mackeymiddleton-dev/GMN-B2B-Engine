@@ -18,3 +18,9 @@ id = "JEW5yg1Oz0y7Hd1WQQZZ0"
 uri = "file://docs/powered-up-ai-full-breakdown.md"
 type = "text"
 title = "Powered Up AI — Full System Breakdown"
+
+[[outputs]]
+id = "hXXzF1FrYEloAyxGzJ6B4"
+uri = "file://attached_assets/variant_draft_reverse_psychology_holes.txt"
+type = "text"
+title = "Reverse-Psychology + Hole Stacking — Production-Ready Draft"
