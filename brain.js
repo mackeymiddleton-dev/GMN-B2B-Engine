@@ -29,6 +29,7 @@ function _rowToMsg(row) {
     position:            row.position,
     had_enrichment_data: row.had_enrichment_data,
     variant:             row.variant,
+    leadForm:            row.lead_form || null,
     length_chars:        row.length_chars,
     timestamp:           Number(row.timestamp),
     repliedWithin48h:    row.replied_within_48h,
@@ -60,9 +61,12 @@ async function initFromDb() {
         booked              BOOLEAN NOT NULL DEFAULT false
       )
     `);
-    // Migrate existing tables that predate the message_class column
+    // Migrate existing tables that predate the message_class / lead_form columns
     await pool.query(
       `ALTER TABLE brain_messages ADD COLUMN IF NOT EXISTS message_class TEXT`
+    ).catch(() => {});
+    await pool.query(
+      `ALTER TABLE brain_messages ADD COLUMN IF NOT EXISTS lead_form TEXT`
     ).catch(() => {});
 
     const { rows } = await pool.query('SELECT * FROM brain_messages ORDER BY timestamp ASC');
@@ -160,8 +164,8 @@ function _dbInsertMessage(msg) {
     `INSERT INTO brain_messages
        (id, contact_id, direction, body, stage, step, message_type, message_class, position,
         had_enrichment_data, variant, length_chars, timestamp,
-        replied_within_48h, replied_at, booked)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+        replied_within_48h, replied_at, booked, lead_form)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
      ON CONFLICT (id) DO NOTHING`,
     [
       msg.id, msg.contactId, msg.direction, msg.body || null,
@@ -170,7 +174,8 @@ function _dbInsertMessage(msg) {
       msg.position ?? null, msg.had_enrichment_data ?? null,
       msg.variant ?? null, msg.length_chars ?? null,
       msg.timestamp, msg.repliedWithin48h ?? null,
-      msg.repliedAt ?? null, msg.booked || false
+      msg.repliedAt ?? null, msg.booked || false,
+      msg.leadForm ?? null
     ]
   ).catch(err => console.error('[Brain] DB insert error:', err.message));
 }
@@ -338,11 +343,21 @@ function patternKey(body) {
  * @param {number|null} [meta.position]      — follow-up hook/nurture position (1-5)
  * @param {boolean|null} [meta.had_enrichment_data] — research data was available when sent
  * @param {string|null} [meta.variant]       — A/B/C discovery script variant (null = legacy)
+ * @param {string} [meta.leadForm]            — Lead form bucket (`high-volume`, `high-intent`, `high-intent-2fa`, `unknown`).
+ *                                              When omitted, the current value on the contact record is snapshotted.
  */
 function recordOutbound(contactId, body, step, meta = {}) {
   const stage = classifyStage(step);
   const message_type = meta.message_type ||
     (step !== null && step !== undefined ? 'scripted-sms' : 'followup-sms');
+  // Snapshot the contact's current leadForm onto the message so historical
+  // analytics stay accurate even if the contact's GHL tags change later.
+  // Lazy-require avoids a circular dep between brain.js and conversations.js.
+  let leadForm = meta.leadForm;
+  if (leadForm === undefined) {
+    try { leadForm = require('./conversations').get(contactId)?.leadForm || 'unknown'; }
+    catch { leadForm = 'unknown'; }
+  }
   const msg = {
     id: makeId(),
     contactId,
@@ -355,6 +370,7 @@ function recordOutbound(contactId, body, step, meta = {}) {
     position: meta.position ?? null,
     had_enrichment_data: meta.had_enrichment_data ?? null,
     variant: meta.variant ?? null,
+    leadForm: leadForm || 'unknown',
     length_chars: (body || '').length,
     timestamp: Date.now(),
     repliedWithin48h: null,
@@ -699,6 +715,14 @@ function getWinningPatterns(stage, channel = 'sms_scripted') {
 
 /**
  * Return full stats summary (all stages + meta).
+ *
+ * Lead-form analytics: every outbound message snapshots the contact's
+ * `leadForm` at send time. We aggregate two views:
+ *   - `byLeadForm`   — sent / replied / booked / replyRate / bookingRate per form
+ *   - `byLeadFormVariant` — same metrics broken down by (leadForm × A/B/C/D variant)
+ * so the dashboard can both show overall form performance and filter the
+ * variant performance view by form. Forms appear automatically as soon as
+ * the matching `ampifyform:<slug>` GHL tag shows up.
  */
 function getStats(contactIdFilter) {
   const messages = loadMessages();
@@ -749,6 +773,89 @@ function getStats(contactIdFilter) {
     b.replyRate = b.sent > 0 ? Math.round((b.replied / b.sent) * 100) : null;
   }
 
+  // ── Per-Lead-Form breakdown ────────────────────────────────────────────────
+  // Reply / booking rates are calculated against settled outbound messages so
+  // pending sends don't dilute the rate. Booked count is per-contact (not per
+  // message) so a single booking isn't multi-counted across hooks.
+  const byLeadForm = {};
+  function ensureForm(name) {
+    if (!byLeadForm[name]) {
+      byLeadForm[name] = {
+        sent: 0, settled: 0, replied: 0,
+        bookedContacts: new Set(),
+        contacts: new Set(),
+        replyRate: null,
+        bookingRate: null
+      };
+    }
+    return byLeadForm[name];
+  }
+  for (const msg of outbound) {
+    const lf = msg.leadForm || 'unknown';
+    const b = ensureForm(lf);
+    b.sent++;
+    b.contacts.add(msg.contactId);
+    if (msg.repliedWithin48h !== null) b.settled++;
+    if (msg.repliedWithin48h === true) b.replied++;
+    if (msg.booked) b.bookedContacts.add(msg.contactId);
+  }
+  // Finalize: convert Sets → counts and compute rates
+  const byLeadFormFinal = {};
+  for (const [name, b] of Object.entries(byLeadForm)) {
+    byLeadFormFinal[name] = {
+      leads:       b.contacts.size,
+      sent:        b.sent,
+      settled:     b.settled,
+      replied:     b.replied,
+      booked:      b.bookedContacts.size,
+      replyRate:   b.settled > 0       ? Math.round((b.replied / b.settled) * 100) : null,
+      bookingRate: b.contacts.size > 0 ? Math.round((b.bookedContacts.size / b.contacts.size) * 100) : null
+    };
+  }
+
+  // ── Per-(Lead-Form × Variant) cross-tab ────────────────────────────────────
+  // Restricted to scripted-sms messages with a non-null variant assignment so it
+  // matches the existing variant-performance view.
+  const byLeadFormVariant = {};
+  function ensureCell(form, variant) {
+    if (!byLeadFormVariant[form]) byLeadFormVariant[form] = {};
+    if (!byLeadFormVariant[form][variant]) {
+      byLeadFormVariant[form][variant] = {
+        sent: 0, settled: 0, replied: 0,
+        bookedContacts: new Set(),
+        contacts: new Set()
+      };
+    }
+    return byLeadFormVariant[form][variant];
+  }
+  for (const msg of outbound) {
+    if (!msg.variant) continue;
+    const isScripted = msg.message_type === 'scripted-sms' ||
+                       (msg.step !== null && msg.step !== undefined);
+    if (!isScripted) continue;
+    const cell = ensureCell(msg.leadForm || 'unknown', msg.variant);
+    cell.sent++;
+    cell.contacts.add(msg.contactId);
+    if (msg.repliedWithin48h !== null) cell.settled++;
+    if (msg.repliedWithin48h === true) cell.replied++;
+    if (msg.booked) cell.bookedContacts.add(msg.contactId);
+  }
+  const byLeadFormVariantFinal = {};
+  for (const [form, variants] of Object.entries(byLeadFormVariant)) {
+    byLeadFormVariantFinal[form] = {};
+    for (const [variant, c] of Object.entries(variants)) {
+      byLeadFormVariantFinal[form][variant] = {
+        contactsAssigned: c.contacts.size,
+        sent:        c.sent,
+        settled:     c.settled,
+        replied:     c.replied,
+        booked:      c.bookedContacts.size,
+        replyRate:   c.settled > 0       ? Math.round((c.replied / c.settled) * 100) : null,
+        bookingRate: c.contacts.size > 0 ? Math.round((c.bookedContacts.size / c.contacts.size) * 100) : null
+      };
+    }
+  }
+
   return {
     totals: {
       outbound:             outbound.length,
@@ -762,6 +869,8 @@ function getStats(contactIdFilter) {
     },
     byStage,
     byHookPosition,
+    byLeadForm:        byLeadFormFinal,
+    byLeadFormVariant: byLeadFormVariantFinal,
     winningPatterns: patterns,
     patternsUpdatedAt: patterns._meta?.analyzedAt || null
   };

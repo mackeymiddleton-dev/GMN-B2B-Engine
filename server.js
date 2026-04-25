@@ -284,6 +284,13 @@ async function drainQueue() {
 
 // ─── GHL Webhook Auth ─────────────────────────────────────────────────────────
 
+// `parseLeadForm` lives in conversations.js so enrollment.js + the brain can
+// share the same parser. It looks for any `ampifyform:<slug>` GHL tag and
+// returns the slug (e.g. 'high-volume', 'high-intent', 'high-intent-2fa').
+// Falls back to 'unknown' when no `ampifyform:*` tag is present. Adding a new
+// form in GHL automatically creates a new analytics bucket — no code change.
+const { parseLeadForm } = conversations;
+
 function verifyGhlWebhook(req, res) {
   const secret = process.env.GHL_WEBHOOK_SECRET;
   if (!secret) {
@@ -638,9 +645,11 @@ app.post('/webhooks/ghl/enrolled', async (req, res) => {
     return;
   }
 
-  // Create/update local contact record
-  conversations.ensureContact(contactId, { firstName, city, phone, email, tags });
-  conversations.update(contactId, { email, tags });
+  // Create/update local contact record. Lead form is derived from the
+  // `ampifyform:<slug>` GHL tag (see parseLeadForm) — defaults to 'unknown'.
+  const leadForm = parseLeadForm(tags);
+  conversations.ensureContact(contactId, { firstName, city, phone, email, tags, leadForm });
+  conversations.update(contactId, { email, tags, leadForm });
 
   // Assign A/B/C variant if this is a new contact (only set once, never overwrite)
   const freshEnrolled = conversations.get(contactId);
@@ -747,21 +756,35 @@ app.post('/webhooks/ghl/contact-updated', async (req, res) => {
   // Only parse tags if the payload actually contains a tags field.
   // If tags are absent (e.g. a non-tag update), hasTags stays false and we
   // skip overwriting the local record — preventing accidental tag erasure.
+  // Accept the same shapes the enrolled webhook does: array, comma-separated
+  // string, or absent. Treat empty-string as "absent" (no tag info provided).
   const rawTagsSource = payload.contact?.tags ?? payload.tags;
-  const hasTags = Array.isArray(rawTagsSource);
-  const tags = hasTags
-    ? rawTagsSource.map(t => (typeof t === 'string' ? t : (t.name || '')).toLowerCase())
-    : [];
+  const hasTags = Array.isArray(rawTagsSource)
+    || (typeof rawTagsSource === 'string' && rawTagsSource.trim().length > 0);
+  let tagList = [];
+  if (Array.isArray(rawTagsSource)) {
+    tagList = rawTagsSource;
+  } else if (typeof rawTagsSource === 'string') {
+    tagList = rawTagsSource.split(',').map(s => s.trim()).filter(Boolean);
+  }
+  const tags = tagList.map(t =>
+    (typeof t === 'string' ? t : (t?.name || '')).toLowerCase()
+  );
 
   console.log(`[ContactUpdated] Received for contact ${contactId} — tags present: ${hasTags}${hasTags ? `, [${tags.join(', ')}]` : ''}`);
 
   // Update local contact record with the latest tags only when the payload
-  // explicitly included a tags array (avoid clearing tags on unrelated updates)
+  // explicitly included a tags array (avoid clearing tags on unrelated updates).
+  // Re-derive leadForm from the new tag set so a later GHL tag edit (e.g. moving
+  // a contact from `ampifyform:high-volume` to `ampifyform:high-intent`) is
+  // reflected in analytics. Existing outbound-message snapshots are untouched
+  // so historical reply rates remain accurate.
   if (hasTags) {
     const existing = conversations.get(contactId);
     if (existing) {
-      conversations.update(contactId, { tags });
-      console.log(`[ContactUpdated] Updated tags on local record for ${contactId}`);
+      const leadForm = parseLeadForm(tags);
+      conversations.update(contactId, { tags, leadForm });
+      console.log(`[ContactUpdated] Updated tags on local record for ${contactId} (leadForm=${leadForm})`);
     }
   }
 
@@ -1775,8 +1798,9 @@ app.post('/api/admin/enrollment-sync', requireAdmin, async (req, res) => {
     if (existing) { skipped.push({ firstName, reason: 'already in system' }); continue; }
 
     // Enroll
-    conversations.ensureContact(contactId, { firstName, city, phone, email, tags });
-    conversations.update(contactId, { email, tags });
+    const leadForm = parseLeadForm(tags);
+    conversations.ensureContact(contactId, { firstName, city, phone, email, tags, leadForm });
+    conversations.update(contactId, { email, tags, leadForm });
 
     const fresh = conversations.get(contactId);
     if (!fresh?.variant) {
@@ -1817,8 +1841,9 @@ app.post('/api/admin/manual-enroll', requireAdmin, async (req, res) => {
   const existing = conversations.get(contactId);
   if (existing?.booked) return res.status(400).json({ error: 'Contact is already marked as booked.' });
 
-  conversations.ensureContact(contactId, { firstName, city, phone, email, tags });
-  conversations.update(contactId, { email, tags });
+  const leadForm = parseLeadForm(tags);
+  conversations.ensureContact(contactId, { firstName, city, phone, email, tags, leadForm });
+  conversations.update(contactId, { email, tags, leadForm });
 
   const fresh = conversations.get(contactId);
   if (!fresh?.variant) {
@@ -2061,12 +2086,24 @@ app.get('/api/brain/variants', requireAdmin, (req, res) => {
     const enabledList = prompts.getEnabledVariants();
     const allContacts = conversations.getAll();
 
+    // Optional Lead Form filter — when provided, only contacts whose
+    // current `leadForm` matches are counted. Used by the Variant Performance
+    // view to compare variants within a specific GHL lead form.
+    const leadFormFilter = (req.query.leadForm || '').toString().trim().toLowerCase() || null;
+
     const counts = { A: { assigned: 0, repliedOnce: 0, replied4: 0, booked: 0 },
                      B: { assigned: 0, repliedOnce: 0, replied4: 0, booked: 0 },
                      C: { assigned: 0, repliedOnce: 0, replied4: 0, booked: 0 },
                      D: { assigned: 0, repliedOnce: 0, replied4: 0, booked: 0 } };
 
+    // Track which lead forms are present in the data so the dashboard can
+    // render filter chips dynamically (no hard-coded form list).
+    const leadFormSet = new Set();
+
     for (const c of Object.values(allContacts)) {
+      const cForm = c.leadForm || 'unknown';
+      leadFormSet.add(cForm);
+      if (leadFormFilter && cForm !== leadFormFilter) continue;
       if (!c.variant || !counts[c.variant]) continue;
       const vc = counts[c.variant];
       vc.assigned++;
@@ -2090,7 +2127,12 @@ app.get('/api/brain/variants', requireAdmin, (req, res) => {
       };
     });
 
-    res.json({ ok: true, variants });
+    res.json({
+      ok: true,
+      variants,
+      leadForms:        Array.from(leadFormSet).sort(),
+      leadFormFilter
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -3779,10 +3821,53 @@ async function loadBrain() {
         }).join('')}</tbody>
       </table></div>\` : '';
 
-    // Load variant stats in parallel
+    // ── Lead Form Performance ────────────────────────────────────────────────
+    // Each row is a Facebook lead form bucket (derived from the
+    // \`ampifyform:<slug>\` GHL tag at enrollment / tag update). A new tag
+    // automatically becomes a new row — no code change needed.
+    const leadFormEntries = Object.entries(data.byLeadForm || {})
+      .sort((a, b) => (b[1].leads || 0) - (a[1].leads || 0));
+    const leadFormHtml = leadFormEntries.length > 0 ? \`
+      <div style="margin-top:28px;border-top:1px solid rgba(203,213,225,.6);padding-top:20px">
+        <div style="font-size:12px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Lead Form Performance</div>
+        <div style="font-size:12px;color:#64748b;margin-bottom:12px;line-height:1.6">
+          Compares how each Facebook lead form converts. Tag contacts in GHL with
+          <code style="background:#f1f5f9;padding:1px 6px;border-radius:6px;font-size:11px">ampifyform:&lt;slug&gt;</code>
+          (e.g. <code style="background:#f1f5f9;padding:1px 6px;border-radius:6px;font-size:11px">ampifyform:high-volume</code>,
+          <code style="background:#f1f5f9;padding:1px 6px;border-radius:6px;font-size:11px">ampifyform:high-intent</code>,
+          <code style="background:#f1f5f9;padding:1px 6px;border-radius:6px;font-size:11px">ampifyform:high-intent-2FA</code>) — new buckets appear here automatically.
+        </div>
+        <div class="table-wrap"><table class="perf-table">
+          <thead><tr>
+            <th>Lead Form</th><th>Leads</th><th>Sent</th><th>Replied</th><th>Reply Rate</th><th>Booked</th><th>Booking Rate</th>
+          </tr></thead>
+          <tbody>\${leadFormEntries.map(([form, s]) => {
+            const rr = s.replyRate;
+            const br = s.bookingRate;
+            const rrCell = rr === null ? '<span style="color:#94a3b8">—</span>' : \`<span class="\${rateClass(rr)}">\${rr}%</span>\`;
+            const brCell = br === null ? '<span style="color:#94a3b8">—</span>' : \`<span class="\${rateClass(br)}">\${br}%</span>\`;
+            return \`<tr>
+              <td style="font-weight:700;color:#0f172a">\${escHtml(form)}</td>
+              <td>\${s.leads}</td>
+              <td>\${s.sent}</td>
+              <td>\${s.replied}</td>
+              <td>\${rrCell}</td>
+              <td>\${s.booked}</td>
+              <td>\${brCell}</td>
+            </tr>\`;
+          }).join('')}</tbody>
+        </table></div>
+      </div>\` : '';
+
+    // ── Variant Performance (with optional Lead Form filter) ────────────────
+    // Active filter survives across the 30-second refresh cycle by being stored
+    // on the panel container as a data attribute.
+    const wrapEl = document.getElementById('brain-content');
+    const activeForm = wrapEl?.dataset.leadFormFilter || '';
     let variantRows = '';
     try {
-      const vRes = await fetch('/api/brain/variants', { headers: { 'x-admin-key': ADMIN_KEY } });
+      const vUrl = '/api/brain/variants' + (activeForm ? ('?leadForm=' + encodeURIComponent(activeForm)) : '');
+      const vRes = await fetch(vUrl, { headers: { 'x-admin-key': ADMIN_KEY } });
       if (vRes.ok) {
         const vData = await vRes.json();
         if (vData.variants) {
@@ -3792,9 +3877,18 @@ async function loadBrain() {
             return \`<span style="font-weight:600;color:\${col}">\${r}%</span>\`;
           }
           const variantColors = { A: '#748ffc', B: '#f59e0b', C: '#34d399' };
+          const formChips = ['', ...(vData.leadForms || [])].map(f => {
+            const label = f === '' ? 'All forms' : f;
+            const isActive = (f === '' && !activeForm) || (f !== '' && f === activeForm);
+            const cls = isActive ? 'filter-pill active' : 'filter-pill';
+            return \`<button class="\${cls}" onclick="setVariantLeadFormFilter(\${JSON.stringify(f)})">\${escHtml(label)}</button>\`;
+          }).join('');
           variantRows = \`
-            <div style="margin-top:24px;border-top:1px solid #1e1e1e;padding-top:20px">
-              <div style="font-size:12px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.06em;margin-bottom:14px">A/B/C/D Script Variant Performance</div>
+            <div style="margin-top:28px;border-top:1px solid rgba(203,213,225,.6);padding-top:20px">
+              <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+                <div style="font-size:12px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.1em">A/B/C/D Script Variant Performance</div>
+                <div class="filter-pills">\${formChips}</div>
+              </div>
               <div class="table-wrap"><table class="perf-table">
                 <thead><tr>
                   <th>Variant</th><th>Enabled</th><th>Contacts</th><th>Replied Once</th><th>4+ Replies</th><th>Booking Rate</th>
@@ -3811,7 +3905,7 @@ async function loadBrain() {
                   </tr>\`;
                 }).join('')}</tbody>
               </table></div>
-              <div style="font-size:11px;color:#3a3a3a;margin-top:10px">All percentages are of total contacts assigned to each variant. Edit scripts at <a href="/admin/prompts?key=\${ADMIN_KEY}" style="color:#818cf8">Prompt Editor</a>.</div>
+              <div style="font-size:11px;color:#64748b;margin-top:10px">\${activeForm ? 'Showing variant performance for lead form <strong>' + escHtml(activeForm) + '</strong>. ' : 'All percentages are of total contacts assigned to each variant. '}Edit scripts at <a href="/admin/prompts?key=\${ADMIN_KEY}" style="color:#0ea56f">Prompt Editor</a>.</div>
             </div>\`;
         }
       }
@@ -3819,11 +3913,22 @@ async function loadBrain() {
 
     el.innerHTML = \`
       \${stageHtml}
+      \${leadFormHtml}
       \${variantRows}
     \`;
   } catch (err) {
     el.innerHTML = '<div class="empty">Failed to load: ' + escHtml(err.message) + '</div>';
   }
+}
+
+// Persist the chosen Lead Form filter on the brain-content container so it
+// survives the 30-second auto-refresh. Calling loadBrain() repaints the panel
+// using the new filter without disturbing other panels on the page.
+function setVariantLeadFormFilter(form) {
+  const wrap = document.getElementById('brain-content');
+  if (!wrap) return;
+  wrap.dataset.leadFormFilter = form || '';
+  loadBrain();
 }
 
 async function loadSpend() {
@@ -4203,11 +4308,15 @@ async function toggleVariant(v, enabled) {
   }
 }
 
+// Persisted on the table container so the chosen Lead Form filter survives
+// the prompt editor's normal refresh cycles.
 async function loadVariantStats() {
   const el = document.getElementById('variant-stats-table');
   if (!el) return;
   try {
-    const res = await fetch('/api/brain/variants', { headers: { 'x-admin-key': ADMIN_KEY } });
+    const activeForm = el.dataset.leadFormFilter || '';
+    const url = '/api/brain/variants' + (activeForm ? ('?leadForm=' + encodeURIComponent(activeForm)) : '');
+    const res = await fetch(url, { headers: { 'x-admin-key': ADMIN_KEY } });
     const data = await res.json();
     if (!res.ok || !data.variants) { el.innerHTML = '<span style="font-size:13px;color:#555">No variant data yet.</span>'; return; }
     const vv = data.variants;
@@ -4227,7 +4336,23 @@ async function loadVariantStats() {
       <td>\${ratePill(v.bookingRatePct)}</td>
     </tr>\`).join('');
 
-    el.innerHTML = \`<table class="variant-stats-table">
+    // Lead Form filter chips — render only when there's more than one bucket
+    // (avoids visual noise on fresh installs that have only "unknown").
+    const forms = data.leadForms || [];
+    let chips = '';
+    if (forms.length > 1) {
+      const items = ['', ...forms].map(f => {
+        const label = f === '' ? 'All forms' : f;
+        const isActive = (f === '' && !activeForm) || (f !== '' && f === activeForm);
+        const style = isActive
+          ? 'background:#0ea56f;color:#fff;border-color:#0ea56f'
+          : 'background:#f1f5f9;color:#0f172a;border-color:#cbd5e1';
+        return \`<button type="button" onclick="setVariantStatsLeadFormFilter(\${JSON.stringify(f)})" style="padding:4px 10px;border-radius:999px;border:1px solid;cursor:pointer;font-size:11px;font-weight:600;\${style}">\${escHtml(label)}</button>\`;
+      }).join('');
+      chips = \`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;align-items:center"><span style="font-size:11px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-right:4px">Lead form:</span>\${items}</div>\`;
+    }
+
+    el.innerHTML = \`\${chips}<table class="variant-stats-table">
       <thead><tr>
         <th>Variant</th><th>Enabled</th><th>Contacts</th><th>Replied Once</th><th>4+ Replies</th><th>Booking Rate</th>
       </tr></thead>
@@ -4236,6 +4361,13 @@ async function loadVariantStats() {
   } catch(err) {
     el.innerHTML = '<span style="font-size:13px;color:#ef4444">Failed to load stats: ' + err.message + '</span>';
   }
+}
+
+function setVariantStatsLeadFormFilter(form) {
+  const el = document.getElementById('variant-stats-table');
+  if (!el) return;
+  el.dataset.leadFormFilter = form || '';
+  loadVariantStats();
 }
 
 async function resetVariantData() {

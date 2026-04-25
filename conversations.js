@@ -12,8 +12,9 @@ let _ready = false;
 
 async function initFromDb() {
   try {
-    // Ensure the variant column exists before reading — idempotent, safe to run on every start.
+    // Ensure the variant + lead_form columns exist before reading — idempotent, safe on every start.
     await pool.query('ALTER TABLE contacts ADD COLUMN IF NOT EXISTS variant varchar(1)').catch(() => {});
+    await pool.query('ALTER TABLE contacts ADD COLUMN IF NOT EXISTS lead_form TEXT').catch(() => {});
     const { rows: contacts } = await pool.query('SELECT * FROM contacts');
     for (const c of contacts) {
       _cache[c.contact_id] = {
@@ -32,6 +33,7 @@ async function initFromDb() {
         totalApiSpend:         c.total_api_spend || 0,
         apiSpendLimitReached:  c.api_spend_limit_reached || false,
         variant:               c.variant || null,
+        leadForm:              c.lead_form || 'unknown',
         ...(c.extra || {}),
         exchanges: []
       };
@@ -94,8 +96,8 @@ function _dbUpsertContact(record) {
     `INSERT INTO contacts
        (contact_id, first_name, city, phone, email, practice_name, tags,
         current_step, booked, booked_at, last_message_at, created_at, extra,
-        total_api_spend, api_spend_limit_reached, variant)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+        total_api_spend, api_spend_limit_reached, variant, lead_form)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
      ON CONFLICT (contact_id) DO UPDATE SET
        first_name              = EXCLUDED.first_name,
        city                    = EXCLUDED.city,
@@ -110,7 +112,8 @@ function _dbUpsertContact(record) {
        extra                   = EXCLUDED.extra,
        total_api_spend         = EXCLUDED.total_api_spend,
        api_spend_limit_reached = EXCLUDED.api_spend_limit_reached,
-       variant                 = EXCLUDED.variant`,
+       variant                 = EXCLUDED.variant,
+       lead_form               = EXCLUDED.lead_form`,
     [
       record.contactId, record.firstName, record.city,
       record.phone, record.email, record.practiceName,
@@ -121,7 +124,8 @@ function _dbUpsertContact(record) {
       JSON.stringify(extra),
       record.totalApiSpend || 0,
       record.apiSpendLimitReached || false,
-      record.variant || null
+      record.variant || null,
+      record.leadForm || 'unknown'
     ]
   ).catch(err => console.error('[Conversations] DB upsert error:', err.message));
 }
@@ -189,6 +193,7 @@ function ensureContact(contactId, defaults = {}) {
       totalApiSpend:        0,
       apiSpendLimitReached: false,
       variant:              null,
+      leadForm:             'unknown',
       ...defaults
     };
     _dbUpsertContact(_cache[contactId]);
@@ -219,7 +224,31 @@ function addExchange(contactId, exchange) {
   _dbUpsertContact(_cache[contactId]);
 }
 
+// ─── Lead Form parsing ────────────────────────────────────────────────────────
+// Convention: any GHL tag of the form `ampifyform:<slug>` (canonical, e.g.
+// `ampifyform:high-volume`, `ampifyform:high-intent`, `ampifyform:high-intent-2FA`)
+// is interpreted as the Facebook lead form the contact came from. The `<slug>`
+// portion becomes the contact's `leadForm` analytics bucket. Adding a new form
+// in GHL (e.g. `ampifyform:high-touch`) automatically creates a new bucket —
+// no code change required. The shorter `form:<slug>` prefix is also accepted
+// for backward compatibility with any older tag naming. When no matching tag
+// is present, the contact is bucketed as `unknown`.
+const LEAD_FORM_PREFIXES = ['ampifyform:', 'form:'];
+function parseLeadForm(tags) {
+  if (!Array.isArray(tags)) return 'unknown';
+  for (const t of tags) {
+    const s = (typeof t === 'string' ? t : (t?.name || '')).toLowerCase().trim();
+    for (const prefix of LEAD_FORM_PREFIXES) {
+      if (s.startsWith(prefix)) {
+        const slug = s.slice(prefix.length).trim();
+        if (slug) return slug;
+      }
+    }
+  }
+  return 'unknown';
+}
+
 // Kick off DB load immediately — store the promise so callers can await readiness
 const _initPromise = initFromDb();
 
-module.exports = { get, set, update, getAll, ensureContact, addExchange, initFromDb, whenReady: () => _initPromise };
+module.exports = { get, set, update, getAll, ensureContact, addExchange, initFromDb, parseLeadForm, whenReady: () => _initPromise };

@@ -325,7 +325,8 @@ async function runEnrollment({ tag = '', dryRun = true, delayMs = 2000, signal }
         if (!dryRun && row._enroll) {
           const { analysis, tz, sendAt, convId, ghlMessages } = row._enroll;
           const { contactId, firstName, city, phone, email, tags } = row;
-          conversations.ensureContact(contactId, { firstName, city, phone, email, tags });
+          const leadForm = conversations.parseLeadForm(tags);
+          conversations.ensureContact(contactId, { firstName, city, phone, email, tags, leadForm });
           // Assign A/B/C variant once, never overwrite
           const preAssign = conversations.get(contactId);
           if (!preAssign?.variant) {
@@ -338,7 +339,7 @@ async function runEnrollment({ tag = '', dryRun = true, delayMs = 2000, signal }
               conversations.addExchange(contactId, ex);
             }
           }
-          conversations.update(contactId, { currentStep: analysis.currentStep, email, tags });
+          conversations.update(contactId, { currentStep: analysis.currentStep, email, tags, leadForm });
           scheduleJob({ contactId, type: 'hook', position: analysis.enrollPosition, sendAt,
             context: { lastOutboundBody: '', lastOutboundStep: analysis.currentStep,
                        timezone: tz, enrolledFromScript: true } });

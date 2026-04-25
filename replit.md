@@ -50,7 +50,7 @@ The Replit preview pane (`/`) redirects directly to `/admin`. Add `?key=YOUR_ADM
 - `ghl.js` — GHL API wrapper (sendMessage, sendEmail, fetchContact, fetchContactsByTag)
 - `conversations.js` — in-memory + DB contact state (contactMap)
 - `followups.js` — job scheduler, silence checks, hook/nurture sends
-- `brain.js` — stats, variant analytics, outbound/inbound recording
+- `brain.js` — stats, variant analytics, outbound/inbound recording (each outbound message snapshots the contact's `leadForm` for historical lead-form analytics)
 - `prompts.js` — DB-backed prompt storage, variant picking (A/B/C)
 - `enrollment.js` — AI-powered conversation history analysis for re-enrollment
 - `spend.js` — per-contact Claude API spend tracking
@@ -73,8 +73,11 @@ Markers in use:
 - `followup-hook-pos1` — the AI opener (Hook 1). Set by `generateAndSendOpener` in server.js. Used to dedup the opener itself and as the "opener already sent" guard for the enrolled webhook.
 - `silence-nudge` — the 5-min static "Hey <name>, you there?" nudge sent by `sendHook1Static` in followups.js when the prospect goes silent after the opener. Used by `processSilenceCheck` to dedup the nudge so it never fires twice. The nudge does **not** call `scheduleNext` — Hook 2 is already queued by the opener.
 
+## Lead Form Segmentation
+Contacts are bucketed by their Facebook lead form via the GHL tag `ampifyform:<slug>` (e.g. `ampifyform:high-volume`, `ampifyform:high-intent`, `ampifyform:high-intent-2FA`). The slug is lowercased and stored on `contacts.lead_form`; missing tags default to `unknown`. The value is re-derived on every `ContactUpdate` webhook and snapshotted onto each outbound `brain_messages.lead_form` so historical analytics stay accurate even if tags change. The admin dashboard's Performance panel and Prompt Editor both surface per-form breakdowns and let you filter A/B/C/D variant performance by lead form. Measurement only — script selection is unaffected.
+
 ## Database
-PostgreSQL (Neon). The deployed app uses `DATABASE_URL`. The local workspace gets its own empty Replit-provided database by default; in dev mode (with `PROD_DATABASE_URL` set) the local server is routed to the live production DB instead. Tables include: `contacts`, `brain_messages`, `winning_patterns`, `funnel_snapshots`, `followup_jobs`, `ai_prompts`, `exchanges`, `optouts`.
+PostgreSQL (Neon). The deployed app uses `DATABASE_URL`. The local workspace gets its own empty Replit-provided database by default; in dev mode (with `PROD_DATABASE_URL` set) the local server is routed to the live production DB instead. Tables include: `contacts` (with `lead_form`), `brain_messages` (with `lead_form` snapshot), `winning_patterns`, `funnel_snapshots`, `followup_jobs`, `ai_prompts`, `exchanges`, `optouts`.
 
 ## Key Environment Variables
 - `ADMIN_KEY` — protects all `/admin/*` routes and API endpoints
