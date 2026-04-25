@@ -1143,13 +1143,17 @@ async function generateAndSendAiReply(contactId, resolvedConvId, opts = {}) {
     }
   }
 
-  // [BOOKED] — contact has agreed to a time; stop AI responding but don't
-  // count as a confirmed booking yet. Real booking stat is set when a GHL
-  // calendar appointment is created (see /webhooks/ghl/appointment below).
+  // [BOOKED] — contact has agreed to a time; stop AI responding and record
+  // the booking against the learning brain. Previously this only flipped
+  // contacts.booked locally and waited for the GHL appointment webhook to
+  // record the brain stat — but the webhook isn't always reached, leaving
+  // the dashboard's booking-rate stat showing 0%. The appointment webhook
+  // (when it does fire) no-ops here since the contact is already booked.
   if (reply.includes('[BOOKED]')) {
     reply = reply.replace(/\[BOOKED\]\s*/gi, '').trim();
     conversations.update(contactId, { booked: true });
-    console.log(`[AiGen] Contact ${contactId} agreed to book — AI paused, awaiting GHL appointment`);
+    brain.recordBooking(contactId);
+    console.log(`[AiGen] Contact ${contactId} agreed to book — AI paused, booking recorded`);
   }
 
   // Update step
@@ -4336,11 +4340,13 @@ async function loadVariantStats() {
       <td>\${ratePill(v.bookingRatePct)}</td>
     </tr>\`).join('');
 
-    // Lead Form filter chips — render only when there's more than one bucket
-    // (avoids visual noise on fresh installs that have only "unknown").
+    // Lead Form filter chips — render whenever any form bucket exists
+    // (matching the Performance dashboard, which always shows the picker).
+    // The "All forms" pill is always present so a single-bucket setup still
+    // shows the user the filter exists.
     const forms = data.leadForms || [];
     let chips = '';
-    if (forms.length > 1) {
+    if (forms.length >= 1) {
       const items = ['', ...forms].map(f => {
         const label = f === '' ? 'All forms' : f;
         const isActive = (f === '' && !activeForm) || (f !== '' && f === activeForm);
