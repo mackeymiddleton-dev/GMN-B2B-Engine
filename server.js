@@ -312,6 +312,43 @@ function verifyGhlWebhook(req, res) {
   return false;
 }
 
+// ─── DND / Opt-Out Helpers ────────────────────────────────────────────────────
+// GHL sets a contact's `dnd` flag (and per-channel `dndSettings`) when the
+// prospect texts STOP, when staff toggle DND in the GHL UI, or when carrier
+// opt-out events are recorded. Treat ANY DND signal — global or any channel —
+// as a full opt-out: stop both SMS and email immediately.
+function isDndFromPayload(payload) {
+  if (!payload) return false;
+  const c = payload.contact || payload;
+
+  // Top-level boolean (string/number/bool variants from different GHL shapes).
+  if (c.dnd === true || c.dnd === 'true' || c.dnd === 1 || c.dnd === '1') {
+    return true;
+  }
+
+  // Per-channel dndSettings: { Email: { status: 'active' }, SMS: {...}, Call: {...}, ... }
+  const settings = c.dndSettings || c.dnd_settings;
+  if (settings && typeof settings === 'object') {
+    for (const ch of Object.values(settings)) {
+      if (!ch) continue;
+      const status = String(ch.status || ch.Status || '').toLowerCase();
+      if (status === 'active') return true;
+    }
+  }
+  return false;
+}
+
+// Add to opt-out blocklist and cancel all pending SMS + email jobs.
+// Order matters: blocklist write first so the scheduler's isOptedOut check
+// catches any job that picks up between cancellation and commit.
+// Idempotent — safe to call multiple times for the same contact.
+async function applyOptOut(contactId, reason) {
+  await optouts.add(contactId);
+  const cancelledSms = followups.cancelContactJobs(contactId);
+  const cancelledEmail = followups.cancelEmailJobs(contactId);
+  console.log(`[Optout] ${contactId} blocklisted (${reason}) — cancelled ${cancelledSms} SMS + ${cancelledEmail} email job(s)`);
+}
+
 // ─── GHL Inbound Webhook ──────────────────────────────────────────────────────
 
 app.post('/webhooks/ghl/inbound', async (req, res) => {
@@ -390,12 +427,19 @@ app.post('/webhooks/ghl/inbound', async (req, res) => {
     return;
   }
 
+  // ── DND check ─────────────────────────────────────────────────────────────
+  // If GHL has already flagged this contact as DND (e.g. carrier processed STOP
+  // before forwarding the message), treat it as a full opt-out and bail.
+  if (isDndFromPayload(payload)) {
+    console.log(`[Webhook] Contact ${contactId} has DND set on inbound — applying opt-out`);
+    await applyOptOut(contactId, 'inbound DND');
+    return;
+  }
+
   // ── Opt-out keyword detection ─────────────────────────────────────────────
   if (optouts.isOptOutKeyword(messageBody)) {
     console.log(`[Webhook] Contact ${contactId} sent opt-out keyword "${messageBody}" — cancelling jobs and confirming`);
-    followups.cancelContactJobs(contactId);
-    followups.cancelEmailJobs(contactId);
-    await optouts.add(contactId);
+    await applyOptOut(contactId, `keyword: ${messageBody.slice(0, 30)}`);
     ghl.sendMessage(contactId, "You've been unsubscribed. You won't receive any more messages from us.").catch(err => {
       console.error(`[Optout] Failed to send confirmation to ${contactId}:`, err.message);
     });
@@ -625,6 +669,19 @@ app.post('/webhooks/ghl/enrolled', async (req, res) => {
     return;
   }
 
+  // Guard: already opted out (carrier STOP, prior keyword, manual blocklist)
+  if (await optouts.isOptedOut(contactId)) {
+    console.log(`[Enrolled] Skipping ${contactId} — already on opt-out blocklist`);
+    return;
+  }
+
+  // Guard: GHL DND set on this contact → record the opt-out and skip
+  if (isDndFromPayload(payload)) {
+    console.log(`[Enrolled] Skipping ${contactId} — DND set on enrollment, recording opt-out`);
+    await applyOptOut(contactId, 'enrollment DND');
+    return;
+  }
+
   // Guard: already booked locally
   const existing = conversations.get(contactId);
   if (existing?.booked) {
@@ -794,6 +851,14 @@ app.post('/webhooks/ghl/contact-updated', async (req, res) => {
     const cancelledSms = followups.cancelContactJobs(contactId);
     const cancelledEmail = followups.cancelEmailJobs(contactId);
     console.log(`[ContactUpdated] Disable AI tag detected for ${contactId} — cancelled ${cancelledSms} SMS job(s) and ${cancelledEmail} email job(s)`);
+  }
+
+  // If GHL has flagged this contact as DND (carrier STOP, manual toggle, or
+  // any per-channel DND), apply a full opt-out — cancel SMS + email and add
+  // to blocklist so the scheduler skips any race-window jobs.
+  if (isDndFromPayload(payload)) {
+    console.log(`[ContactUpdated] DND detected for ${contactId} — applying opt-out`);
+    await applyOptOut(contactId, 'contact-updated DND');
   }
 });
 
@@ -1849,6 +1914,16 @@ app.post('/api/admin/enrollment-sync', requireAdmin, async (req, res) => {
     // Skip: Disable AI tag
     if (tags.includes('disable ai')) { skipped.push({ firstName, reason: 'disable ai tag' }); continue; }
 
+    // Skip: already opted out (carrier STOP, prior keyword, manual blocklist)
+    if (await optouts.isOptedOut(contactId)) { skipped.push({ firstName, reason: 'opted out' }); continue; }
+
+    // Skip: GHL DND set on this contact → record opt-out and skip
+    if (isDndFromPayload(c)) {
+      await applyOptOut(contactId, 'enrollment-sync DND');
+      skipped.push({ firstName, reason: 'dnd' });
+      continue;
+    }
+
     // Skip: already in our system — don't touch their schedule at all
     const existing = conversations.get(contactId);
     if (existing) { skipped.push({ firstName, reason: 'already in system' }); continue; }
@@ -1893,6 +1968,13 @@ app.post('/api/admin/manual-enroll', requireAdmin, async (req, res) => {
   const tags      = (ghlContact.tags || []).map(t => (typeof t === 'string' ? t : t.name || '').toLowerCase());
 
   if (tags.includes('disable ai')) return res.status(400).json({ error: 'Contact has "Disable AI" tag — skipping.' });
+
+  if (await optouts.isOptedOut(contactId)) return res.status(400).json({ error: 'Contact has opted out — skipping.' });
+
+  if (isDndFromPayload(ghlContact)) {
+    await applyOptOut(contactId, 'manual-enroll DND');
+    return res.status(400).json({ error: 'Contact has Do Not Disturb set in GHL — added to opt-out list and skipped.' });
+  }
 
   const existing = conversations.get(contactId);
   if (existing?.booked) return res.status(400).json({ error: 'Contact is already marked as booked.' });
