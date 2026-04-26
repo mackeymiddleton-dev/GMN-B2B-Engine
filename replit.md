@@ -46,6 +46,8 @@ The entire admin UI HTML+CSS+JS is rendered by huge backtick template literals i
 
 When editing anything inside the admin template, scan your changes for contractions before saving.
 
+**Same trap, different shape — `JSON.stringify` interpolated into an HTML attribute:** `JSON.stringify(x)` always wraps strings in double quotes. Embedding that inside `onclick="..."` (or any `attr="..."`) collides with the attribute delimiter and silently truncates the JS — clicking the element then throws `SyntaxError: Unexpected end of input`. The unknown-lead-form-button crash on 2026-04-26 (server.js lines 4168 and 4636) was exactly this: `onclick="setVariantLeadFormFilter(${JSON.stringify(f)})"` rendered as `onclick="setVariantLeadFormFilter("unknown")"`. Fix pattern used: `${JSON.stringify(x).replace(/"/g, '&quot;')}` — the browser HTML-decodes `&quot;` back to `"` when invoking the handler. (Switching the attribute to single quotes also works as long as the string can't contain a single quote.)
+
 ### 3. The user republishes manually — file/code changes are NOT live in prod until they confirm
 Two things to keep straight when reporting status to the user:
 - **DB writes** (anything written to the prod Neon database via `PROD_DATABASE_URL`) — these are live in prod **immediately**. Admin UI shows them on next refresh.

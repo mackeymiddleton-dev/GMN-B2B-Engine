@@ -4162,7 +4162,7 @@ async function loadBrain() {
             const label = f === '' ? 'All forms' : f;
             const isActive = (f === '' && !activeForm) || (f !== '' && f === activeForm);
             const cls = isActive ? 'filter-pill active' : 'filter-pill';
-            return \`<button class="\${cls}" onclick="setVariantLeadFormFilter(\${JSON.stringify(f)})">\${escHtml(label)}</button>\`;
+            return \`<button class="\${cls}" onclick="setVariantLeadFormFilter(\${JSON.stringify(f).replace(/"/g, '&quot;')})">\${escHtml(label)}</button>\`;
           }).join('');
           variantRows = \`
             <div style="margin-top:28px;border-top:1px solid rgba(203,213,225,.6);padding-top:20px">
@@ -4630,7 +4630,7 @@ async function loadVariantStats() {
         const style = isActive
           ? 'background:#0ea56f;color:#fff;border-color:#0ea56f'
           : 'background:#f1f5f9;color:#0f172a;border-color:#cbd5e1';
-        return \`<button type="button" onclick="setVariantStatsLeadFormFilter(\${JSON.stringify(f)})" style="padding:4px 10px;border-radius:999px;border:1px solid;cursor:pointer;font-size:11px;font-weight:600;\${style}">\${escHtml(label)}</button>\`;
+        return \`<button type="button" onclick="setVariantStatsLeadFormFilter(\${JSON.stringify(f).replace(/"/g, '&quot;')})" style="padding:4px 10px;border-radius:999px;border:1px solid;cursor:pointer;font-size:11px;font-weight:600;\${style}">\${escHtml(label)}</button>\`;
       }).join('');
       chips = \`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;align-items:center"><span style="font-size:11px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-right:4px">Lead form:</span>\${items}</div>\`;
     }
