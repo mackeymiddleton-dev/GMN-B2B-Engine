@@ -57,6 +57,41 @@ function _dbBulkUpdateStatus(ids, status) {
   ).catch(err => console.error('[Followups] DB bulk update error:', err.message));
 }
 
+/**
+ * Atomically claim a pending job at the DB level.
+ *
+ * Returns true if THIS process successfully transitioned the row from
+ * 'pending' → 'sending', false if another process already owned it.
+ *
+ * This is the cross-process safety guard for duplicate sends during
+ * deploy rollovers (when two app instances briefly co-exist and both
+ * poll the shared DB). Single-process races are already handled by
+ * the per-contact outbound lock + in-cache re-check; this function
+ * adds the third defense for the multi-process case.
+ *
+ * Trade-off: if the process crashes AFTER claiming but BEFORE finalizing
+ * to 'sent'/'skipped', the row sits in 'sending' indefinitely and the
+ * job is silently dropped (getDueJobs filters by status='pending', so
+ * 'sending' is never re-picked). For low-stakes messages like the
+ * 5-min silence nudge, silent drop is preferable to a duplicate send.
+ */
+async function _dbAtomicClaim(jobId) {
+  try {
+    const { rowCount } = await _pool.query(
+      `UPDATE followup_jobs SET status='sending'
+       WHERE id=$1 AND status='pending'
+       RETURNING id`,
+      [jobId]
+    );
+    return rowCount === 1;
+  } catch (err) {
+    console.error(`[Followups] DB atomic claim error for ${jobId}:`, err.message);
+    // On DB error, fail CLOSED (return false → skip the send) rather
+    // than fail open (return true → potentially duplicate).
+    return false;
+  }
+}
+
 _initJobsFromDb();
 
 // When a contact hits the $1 spend cap, immediately cancel all their pending jobs
@@ -329,7 +364,19 @@ function cancelEmailJobs(contactId) {
 
 function getDueJobs() {
   const now = Date.now();
-  return load().filter(j => j.status === 'pending' && j.sendAt <= now);
+  // Dedupe by job ID. The in-memory cache should never contain duplicates,
+  // but if a corrupted save() ever produced one, two ticks of drainJobs
+  // would process the same job twice (cause: duplicate outbound sends).
+  // This is a cheap belt-and-suspenders guard.
+  const seen = new Set();
+  const out = [];
+  for (const j of load()) {
+    if (j.status !== 'pending' || j.sendAt > now) continue;
+    if (seen.has(j.id)) continue;
+    seen.add(j.id);
+    out.push(j);
+  }
+  return out;
 }
 
 function updateJob(jobId, updates) {
@@ -619,6 +666,45 @@ async function sendHook1Static(job, contact) {
   // duplicate sends or wrong-step replies.
   const _lock = outboundLock.acquire(job.contactId);
   try {
+    // ── LOCK-TIME DEDUP (in-process) ──────────────────────────────────────
+    // The dedup in processSilenceCheck (line ~1027) runs BEFORE the lock,
+    // so two concurrent calls (e.g., a scheduler-tick race or a transient
+    // duplicate cache entry) can both pass it on stale state and proceed
+    // to call sendHook1Static. The lock serializes them per-contact, but
+    // without re-checking inside the lock, both still send. Re-verify here:
+    //   1. The job itself is still 'pending' in cache.
+    //   2. No `silence-nudge` exchange already exists for this contact.
+    // Either condition means a duplicate is in flight — abort silently.
+    const freshJob = load().find(j => j.id === job.id);
+    if (freshJob && freshJob.status !== 'pending') {
+      console.log(`[Followups] Silence nudge for ${job.contactId}: job already ${freshJob.status} (lock-time dedup) — skipping duplicate send`);
+      return;
+    }
+    const freshContact = conversations.get(job.contactId) || contact;
+    const freshExchanges = freshContact?.exchanges || [];
+    if (freshExchanges.some(e => e.type === 'silence-nudge')) {
+      // Only rewrite status if the cached row is still 'pending' — never
+      // overwrite a 'sent'/'skipped' final state with 'cancelled'.
+      if (!freshJob || freshJob.status === 'pending') {
+        updateJob(job.id, { status: 'cancelled', error: 'Silence nudge already sent (lock-time dedup)' });
+      }
+      console.log(`[Followups] Silence nudge for ${job.contactId}: nudge already in exchanges (lock-time dedup) — skipping duplicate send`);
+      return;
+    }
+
+    // ── ATOMIC DB CLAIM (cross-process) ───────────────────────────────────
+    // Reserved-VM deploys can briefly run two app instances during rollover.
+    // Both have separate _jobCache copies, so the in-process lock above does
+    // NOT protect against them. The atomic UPDATE...WHERE status='pending'
+    // ensures only ONE process transitions the row from pending → sending,
+    // so only that process proceeds to call ghl.sendMessage. The other one
+    // sees rowCount=0 and aborts before sending.
+    const claimed = await _dbAtomicClaim(job.id);
+    if (!claimed) {
+      console.log(`[Followups] Silence nudge for ${job.contactId}: another process owns job ${job.id} (DB claim failed) — skipping duplicate send`);
+      return;
+    }
+
     let sendResult;
     try {
       sendResult = await ghl.sendMessage(job.contactId, hookText);
