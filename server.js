@@ -2391,15 +2391,53 @@ app.get('/api/brain/variants', requireAdmin, (req, res) => {
 
     const pct = (n, d) => d > 0 ? Math.round((n / d) * 100) : null;
 
+    // ── Bayesian P(Best) via Monte Carlo ─────────────────────────────────────
+    // For each variant we model its unknown true booking rate as a Beta
+    // distribution: Beta(bookings + 1, non-bookings + 1). We start from a
+    // uniform prior Beta(1,1) — "we have no idea" — then update it with the
+    // observed data. Each of 50,000 simulated worlds independently draws a
+    // plausible booking rate from every variant's distribution; the variant
+    // with the highest draw wins that world. P(Best) = fraction of worlds won.
+    //
+    // Sampling Beta(α,β) for integer params via the Gamma relationship:
+    //   X ~ Gamma(α,1) = sum of α independent Exp(1) = -sum(log(U))
+    //   X/(X+Y) ~ Beta(α,β) when Y ~ Gamma(β,1)
+    // This is exact for integer parameters — no approximation needed.
+    function sampleBeta(a, b) {
+      let x = 0; for (let i = 0; i < a; i++) x -= Math.log(Math.random());
+      let y = 0; for (let i = 0; i < b; i++) y -= Math.log(Math.random());
+      return x / (x + y);
+    }
+
+    const MIN_CONTACTS_FOR_PBEST = 3; // suppress P(Best) when sample is too small to mean anything
+    const SAMPLES = 50000;
+    const activeVariants = ['A', 'B', 'C', 'D'].filter(v => counts[v].assigned >= MIN_CONTACTS_FOR_PBEST);
+    const wins = { A: 0, B: 0, C: 0, D: 0 };
+
+    if (activeVariants.length >= 2) {
+      for (let i = 0; i < SAMPLES; i++) {
+        let bestV = null, bestVal = -1;
+        for (const v of activeVariants) {
+          const vc = counts[v];
+          const s = sampleBeta(vc.booked + 1, (vc.assigned - vc.booked) + 1);
+          if (s > bestVal) { bestVal = s; bestV = v; }
+        }
+        wins[bestV]++;
+      }
+    }
+
     const variants = ['A', 'B', 'C', 'D'].map(v => {
       const vc = counts[v];
+      const hasEnoughData = vc.assigned >= MIN_CONTACTS_FOR_PBEST && activeVariants.length >= 2;
       return {
         variant:          v,
         enabled:          enabledList.includes(v),
         contactsAssigned: vc.assigned,
         repliedOncePct:   pct(vc.repliedOnce, vc.assigned),
         replied4Pct:      pct(vc.replied4,    vc.assigned),
-        bookingRatePct:   pct(vc.booked,      vc.assigned)
+        bookingRatePct:   pct(vc.booked,      vc.assigned),
+        bookedRaw:        vc.booked,
+        pBest:            hasEnoughData ? Math.round((wins[v] / SAMPLES) * 100) : null
       };
     });
 
@@ -4245,6 +4283,13 @@ async function loadBrain() {
             const cls = isActive ? 'filter-pill active' : 'filter-pill';
             return \`<button class="\${cls}" onclick="setVariantLeadFormFilter(\${JSON.stringify(f).replace(/"/g, '&quot;')})">\${escHtml(label)}</button>\`;
           }).join('');
+          function vPBestPill(p) {
+            if (p === null || p === undefined) return '<span style="color:#94a3b8;font-size:12px">—</span>';
+            const bg   = p >= 85 ? '#dcfce7' : p >= 70 ? '#fef3c7' : '#f1f5f9';
+            const fg   = p >= 85 ? '#16a34a' : p >= 70 ? '#b45309' : '#64748b';
+            const ring = p >= 85 ? '#86efac' : p >= 70 ? '#fcd34d' : '#cbd5e1';
+            return \`<span style="display:inline-block;padding:2px 9px;border-radius:999px;background:\${bg};color:\${fg};border:1px solid \${ring};font-weight:700;font-size:12px">\${p}%</span>\`;
+          }
           variantRows = \`
             <div style="margin-top:28px;border-top:1px solid rgba(203,213,225,.6);padding-top:20px">
               <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
@@ -4254,6 +4299,7 @@ async function loadBrain() {
               <div class="table-wrap"><table class="perf-table">
                 <thead><tr>
                   <th>Variant</th><th>Enabled</th><th>Contacts</th><th>Replied Once</th><th>4+ Replies</th><th>Booking Rate</th>
+                  <th style="white-space:nowrap">P(Best)</th>
                 </tr></thead>
                 <tbody>\${vData.variants.map(v => {
                   const col = variantColors[v.variant] || '#aaa';
@@ -4264,10 +4310,18 @@ async function loadBrain() {
                     <td>\${vPct(v.repliedOncePct)}</td>
                     <td>\${vPct(v.replied4Pct)}</td>
                     <td>\${vPct(v.bookingRatePct)}</td>
+                    <td>\${vPBestPill(v.pBest)}</td>
                   </tr>\`;
                 }).join('')}</tbody>
               </table></div>
-              <div style="font-size:11px;color:#64748b;margin-top:10px">\${activeForm ? 'Showing variant performance for lead form <strong>' + escHtml(activeForm) + '</strong>. ' : 'All percentages are of total contacts assigned to each variant. '}Edit scripts at <a href="/admin/prompts?key=\${ADMIN_KEY}" style="color:#0ea56f">Prompt Editor</a>.</div>
+              <div style="margin-top:12px;padding:10px 12px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;font-size:11px;color:#475569;line-height:1.6">
+                <strong style="color:#0f172a">P(Best)</strong> = probability this variant has the highest <em>true</em> booking rate across 50,000 simulated outcomes.
+                <span style="margin-left:6px;padding:1px 7px;border-radius:999px;background:#dcfce7;color:#16a34a;border:1px solid #86efac;font-weight:700">85%+</span> Strong signal.
+                <span style="margin-left:4px;padding:1px 7px;border-radius:999px;background:#fef3c7;color:#b45309;border:1px solid #fcd34d;font-weight:700">70–84%</span> Keep testing.
+                <span style="margin-left:4px;padding:1px 7px;border-radius:999px;background:#f1f5f9;color:#64748b;border:1px solid #cbd5e1;font-weight:700">&lt;70%</span> Too early to call.
+                &nbsp;&nbsp;<span style="color:#94a3b8">— = fewer than 3 contacts.</span>
+                &nbsp;&nbsp;\${activeForm ? 'Lead form: <strong>' + escHtml(activeForm) + '</strong>.' : ''} Edit scripts at <a href="/admin/prompts?key=\${ADMIN_KEY}" style="color:#0ea56f">Prompt Editor</a>.
+              </div>
             </div>\`;
         }
       }
@@ -4689,6 +4743,14 @@ async function loadVariantStats() {
       return \`<span class="rate-pill \${cls}">\${rate}%</span>\`;
     }
 
+    function pBestPill(p) {
+      if (p === null || p === undefined) return '<span style="color:#94a3b8;font-size:12px">—</span>';
+      const bg   = p >= 85 ? '#dcfce7' : p >= 70 ? '#fef3c7' : '#f1f5f9';
+      const fg   = p >= 85 ? '#16a34a' : p >= 70 ? '#b45309' : '#64748b';
+      const ring = p >= 85 ? '#86efac' : p >= 70 ? '#fcd34d' : '#cbd5e1';
+      return \`<span style="display:inline-block;padding:2px 9px;border-radius:999px;background:\${bg};color:\${fg};border:1px solid \${ring};font-weight:700;font-size:12px">\${p}%</span>\`;
+    }
+
     const rows = vv.map(v => \`<tr>
       <td><span class="vs-badge vs-badge-\${v.variant}">\${v.variant}</span></td>
       <td><span class="\${v.enabled?'vs-enabled':'vs-disabled'}">\${v.enabled?'Yes':'No'}</span></td>
@@ -4696,6 +4758,7 @@ async function loadVariantStats() {
       <td>\${ratePill(v.repliedOncePct)}</td>
       <td>\${ratePill(v.replied4Pct)}</td>
       <td>\${ratePill(v.bookingRatePct)}</td>
+      <td>\${pBestPill(v.pBest)}</td>
     </tr>\`).join('');
 
     // Lead Form filter chips — render whenever any form bucket exists
@@ -4719,9 +4782,21 @@ async function loadVariantStats() {
     el.innerHTML = \`\${chips}<table class="variant-stats-table">
       <thead><tr>
         <th>Variant</th><th>Enabled</th><th>Contacts</th><th>Replied Once</th><th>4+ Replies</th><th>Booking Rate</th>
+        <th style="white-space:nowrap">P(Best) <span style="font-weight:400;font-size:10px;color:#94a3b8;letter-spacing:0">&#9432;</span></th>
       </tr></thead>
       <tbody>\${rows}</tbody>
-    </table>\`;
+    </table>
+    <div style="margin-top:14px;padding:12px 14px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;font-size:12px;color:#475569;line-height:1.6">
+      <strong style="color:#0f172a">What is P(Best)?</strong><br>
+      The probability — based on 50,000 simulated outcomes — that this variant has the highest <em>true</em> booking rate, accounting for sample size.
+      A variant showing 28% with only 10 contacts could just be luck; P(Best) captures that uncertainty.
+      <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px">
+        <span style="padding:2px 9px;border-radius:999px;background:#dcfce7;color:#16a34a;border:1px solid #86efac;font-weight:700;font-size:11px">85%+</span><span style="font-size:11px;color:#475569">Strong signal — consider shifting more traffic here.</span>
+        <span style="padding:2px 9px;border-radius:999px;background:#fef3c7;color:#b45309;border:1px solid #fcd34d;font-weight:700;font-size:11px">70–84%</span><span style="font-size:11px;color:#475569">Leaning this way — keep collecting data.</span>
+        <span style="padding:2px 9px;border-radius:999px;background:#f1f5f9;color:#64748b;border:1px solid #cbd5e1;font-weight:700;font-size:11px">&lt;70%</span><span style="font-size:11px;color:#475569">Too early to call — results could flip.</span>
+        <span style="font-size:11px;color:#94a3b8">— = fewer than 3 contacts (not enough data to compute).</span>
+      </div>
+    </div>\`;
   } catch(err) {
     el.innerHTML = '<span style="font-size:13px;color:#ef4444">Failed to load stats: ' + err.message + '</span>';
   }
