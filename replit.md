@@ -8,6 +8,32 @@ Admin dashboard lives at `/admin?key=YOUR_ADMIN_KEY`.
 
 ---
 
+## ⚠️ AGENT: ALWAYS USE PROD_DATABASE_URL FOR ONE-OFF SCRIPTS ⚠️
+
+**The trap:** This Replit workspace ships with its own empty Postgres at `DATABASE_URL` (host `helium`). The real data lives in Neon at `PROD_DATABASE_URL`. The running server flips `process.env.DATABASE_URL = process.env.PROD_DATABASE_URL` inside `server.js` (lines 17–22), so the app is always on prod. **But that flip never runs in a fresh shell process** — so any standalone `node -e "..."` or `node scripts/foo.js` invocation that uses `DATABASE_URL` will silently hit the empty local DB and return wrong/stale results.
+
+**Hard rule for any one-off DB query the agent writes:** always use `process.env.PROD_DATABASE_URL` directly. Never use `DATABASE_URL` from a shell-launched script. If you find yourself about to type `connectionString: process.env.DATABASE_URL` in an ad-hoc script, stop and use the snippet below.
+
+**Canonical snippet — copy-paste into every one-off script:**
+```js
+const { Pool } = require('pg');
+const pool = new Pool({
+  connectionString: process.env.PROD_DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
+});
+```
+
+**Sanity check before trusting any query result:** if a row count, length, or table list looks surprisingly small, empty, or "all identical", you are probably on the wrong DB. Verify by logging the host:
+```js
+console.log('DB host:', (process.env.PROD_DATABASE_URL || '').match(/@([^/]+)/)?.[1]);
+// Should print something like: ep-falling-haze-anlase71.c-6.us-east-1.aws.neon.tech
+// If it prints "helium" or is empty, STOP — you're on the wrong DB.
+```
+
+**Existing module code is fine.** server.js, conversations.js, brain.js, followups.js, optouts.js, and prompts.js all use `DATABASE_URL` and that's correct — they only run inside the server process where the flip has already happened. This rule is exclusively for ad-hoc shell scripts the agent writes during a session.
+
+---
+
 ## Dev Mode (Local UI Testing)
 
 ### What it does
