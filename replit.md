@@ -79,9 +79,9 @@ When telling the user something is "done" or "live", be explicit about which: "t
 ### 5. GHL webhook misses — AI goes silent after a prospect reply
 GHL occasionally fails to deliver the inbound webhook to the server, even when the prospect's reply is visible in the GHL UI. The symptom: the prospect sent a message (e.g. "Go"), you can see it in GHL, but the DB has no inbound exchange record for that contact and the AI never responded. Confirmed cases: Yung Tommy Walker (Apr 26 08:01 "I'm sorry"), Lester Herbertson (Apr 26 09:21 "Go").
 
-**Immediate fix:** Admin dashboard → "Missed Reply Trigger" section → search the contact name → type exactly what they sent → hit Trigger AI Response. The AI responds immediately. Before triggering, check whether the conversation has moved on manually — if a human has already taken over and sent subsequent messages, do NOT trigger (it would send an out-of-context AI reply).
+**Long-term fix (built Apr 26 2026):** `reconciliation.js` polls GHL every 30 seconds for active contacts and replays any missed inbound through `handleInbound`. See trap #9 for the architecture, dedup story, and tuning knobs. The webhook is still primary; the poller is a safety net that should typically catch zero or one message per day.
 
-**Root cause:** GHL webhook delivery is best-effort; the server has no polling/replay mechanism. Long-term fix (not yet built): a reconciliation job that periodically pulls recent GHL messages and backfills any inbound the server missed — medium complexity, ~1-2 hours. This is documented in the Saved Issues panel on the admin dashboard.
+**Manual fallback:** Admin dashboard → "Missed Reply Trigger" section → search the contact name → type exactly what they sent → hit Trigger AI Response. The AI responds immediately. Before triggering, check whether the conversation has moved on manually — if a human has already taken over and sent subsequent messages, do NOT trigger (it would send an out-of-context AI reply).
 
 **Saved Issues panel:** Added Apr 26. Lives at the bottom of the admin dashboard. Stores bugs/patterns you want to revisit later without fixing immediately — title, problem description, solution/next-step notes, optional contact reference, open/done status. The GHL webhook-miss issue is pre-seeded there. Use it whenever something weird happens and you are not ready to fix it yet — saves re-investigation cost next time.
 
@@ -96,6 +96,28 @@ The admin UI's "Save" button on the Prompt Editor already does both correctly (`
 
 ### 7. When you renumber steps in a prompt variant, cross-references break silently
 The variant prompts are full of internal step references — RULES section ("EXCEPT the Step N bridge"), MAPS CONFIRMATION LOOP ("after the [PRACTICE_DETECTED] bridge in Step N"), EARLY BOOKING ("skip directly to Step N"), LIVE DATA ("use the real numbers in Step N"), NEVER REPEAT A QUESTION (which questions belong to which step), and the [STEP:N] valid-range note in RULES ("integer 1-N"). When you change the numbering of any step, **every one** of those references must be updated in the same edit pass. The Apr 26 Variant B renumber (8 steps → 7) missed the RULES line "EXCEPT the Step 6 bridge" — that contradiction made the bridge non-deterministic until hotfixed. Audit checklist before saving a renumber: search the prompt text for every `Step \d` occurrence and reconcile each one against the new numbering, then re-confirm the [STEP:N] integer range cap matches the highest step number.
+
+### 9. Webhook reconciliation poller — architecture and tuning (`reconciliation.js`)
+A background `setInterval(runReconciliation, 30_000)` started at server boot (skipped in DEV_MODE) that catches inbound webhook misses. It is a safety net, not the primary path — the GHL webhook is still the fast path. Live admin panel: "Webhook Reconciliation Poller" subpanel under Followups.
+
+**Dedup mechanism (the linchpin):** every inbound exchange now stores the GHL `messageId` in `exchanges.message_id`. There are TWO layers, and you need both — the first layer alone is not sufficient because of the race window between check and act:
+
+1. **Cheap fast-path check** at the top of `handleInbound` (`conversations.hasExchangeWithMessageId`). Catches the common case where the poller fires after the webhook already finished.
+2. **Atomic claim** at "step 3" of `handleInbound` via `conversations.tryClaimInbound`, backed by a partial unique index `exchanges_message_id_unique ON exchanges(message_id) WHERE message_id IS NOT NULL` and `INSERT ... ON CONFLICT DO NOTHING`. This is the authoritative single-winner gate — if rowCount comes back 0, we lost the race and `handleInbound` returns BEFORE calling Claude. The cheap check alone is not enough because both webhook and poller can pass it before either has inserted (window: ~200-500ms while GHL fetchContact runs).
+
+The column already existed in the DB before this build; we just started populating it (`addExchange` previously stripped `messageId` before calling `_dbInsertExchange` — that bug meant every inbound row had `message_id = null`, breaking the entire dedup story). Existing 336 rows still have NULL message_id, which the partial index allows. Outbound messageIds are intentionally NOT captured — the poller only needs inbound IDs for dedup, and updating every outbound `addExchange` call site was out of scope.
+
+**Why TWO functions (`addExchange` + `tryClaimInbound`):** `addExchange` is synchronous and fire-and-forget (called from ~13 outbound paths that don't care about race outcomes — outbound messageId is always null, ON CONFLICT never fires for them). `tryClaimInbound` is async and returns boolean — used by `handleInbound` only, where we MUST know if we won the race so Claude is gated correctly. Don't merge them; the two semantics matter.
+
+**Per-cycle flow:** select candidates (contacts with `lastMessageAt` in last 24h, not booked, no `pausedReason`, not opt'd out, no "disable ai" tag, has a known conversationId from recent exchanges) → for each, `ghl.fetchMessages(conversationId, 20)` → filter to inbounds in the last 10 min that we don't already have by messageId → safety check `_hasLaterOutbound` (skip if a human/AI already replied) → final `optouts.isOptedOut` re-check → call `handleInbound`. Each cycle skips itself if the previous one is still running (`_running` guard) so a slow GHL response can never queue up parallel cycles.
+
+**DEV_MODE behavior:** the scheduler does NOT start. A would-have-replayed line is still logged so local dev can see what the poller would do, but it never calls `handleInbound` (which would fire real SMS via the prod GHL account, since `DATABASE_URL` is routed to `PROD_DATABASE_URL` in dev).
+
+**Tuning knobs (top of `reconciliation.js`):** `POLL_WINDOW_MS` (10 min — don't replay stale messages, prospects have moved on), `ACTIVE_WINDOW_MS` (24h — only poll recently-active contacts), `MAX_REPLAYS_LOG` (50 — admin panel ring buffer), `PER_CONTACT_FETCH_LIMIT` (20 messages per GHL fetch). At ~74 active contacts the cycle is roughly 2-3 GHL req/sec, well under GHL's per-location rate limit. If the active set grows to >300, consider batching or extending the cycle to 60s.
+
+**Circular require resolution:** `reconciliation.js` needs `handleInbound` (defined in `server.js`); `server.js` needs `reconciliation` to start the scheduler. Solved by `reconciliation.setHandleInbound(handleInbound)` called from inside `app.listen` callback after `handleInbound` has been defined. Don't `require('./server')` from `reconciliation.js` — it will deadlock the module loader.
+
+**What "working" looks like:** the admin panel shows "Last run: <recent>", cycle count climbs every 30s, replay count usually stays at 0 or low single digits per day. A spike means GHL webhook delivery degraded — investigate before assuming the poller is "doing its job" as the new normal.
 
 ### 8. All 4 variants now carry two non-negotiable safety blocks — preserve them on any future edit
 Inserted Apr 26 right above the `━━━ AFTER A DECLINE` header in every variant (A/B/C/D):

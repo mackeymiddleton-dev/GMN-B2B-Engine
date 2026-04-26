@@ -36,6 +36,7 @@ const { runResearch } = require('./research');
 const { startScan } = require('./scanner');
 const brain = require('./brain');
 const followups = require('./followups');
+const reconciliation = require('./reconciliation');
 const prompts = require('./prompts');
 const { runEnrollment } = require('./enrollment');
 const spend = require('./spend');
@@ -400,6 +401,16 @@ app.post('/webhooks/ghl/inbound', async (req, res) => {
     ''
   ).trim();
 
+  // GHL message ID — used for dedup against the reconciliation poller so the
+  // same inbound is never processed twice (once via webhook, once via poll).
+  // GHL ships several payload shapes; cover the common ones.
+  const messageId =
+    payload.messageId ||
+    payload.message_id ||
+    payload.message?.id ||
+    payload.id ||
+    null;
+
   const firstName =
     payload.contact?.firstName ||
     payload.firstName ||
@@ -457,7 +468,7 @@ app.post('/webhooks/ghl/inbound', async (req, res) => {
   // Cancel scan-visibility watcher if the prospect replied to the data-reveal step
   clearScanWatch(contactId);
 
-  enqueueJob({ contactId, conversationId, messageBody, firstName, city, phone });
+  enqueueJob({ contactId, conversationId, messageBody, firstName, city, phone, messageId });
 });
 
 // ─── AI Opener (sent immediately on enrollment) ───────────────────────────────
@@ -922,7 +933,16 @@ function recoverStateFromHistory(contactId, fresh, rawGhlMessages) {
 
 // ─── Webhook Handler ──────────────────────────────────────────────────────────
 
-async function handleInbound({ contactId, conversationId, messageBody, firstName, city, phone }) {
+async function handleInbound({ contactId, conversationId, messageBody, firstName, city, phone, messageId }) {
+  // ── 0a. Dedup against reconciliation poller ──────────────────────────────────
+  // If we've already recorded an inbound exchange with this GHL messageId, the
+  // webhook and the reconciliation poller raced to deliver the same message —
+  // drop the second one silently to prevent a double AI reply.
+  if (messageId && await conversations.hasExchangeWithMessageId(messageId)) {
+    console.log(`[Webhook] Dedup — messageId ${messageId} already processed for ${contactId}`);
+    return;
+  }
+
   // ── 0. Wait for any in-flight outbound for this contact to fully settle ──────
   // The opener / AI reply / confirmation / follow-up flows all do SEND→PERSIST.
   // If a prospect replies inside that window (under ~5s), the inbound webhook
@@ -959,13 +979,23 @@ async function handleInbound({ contactId, conversationId, messageBody, firstName
   if (resolvedPhone) infoUpdates.phone = resolvedPhone;
   if (Object.keys(infoUpdates).length) conversations.update(contactId, infoUpdates);
 
-  // ── 3. Record this inbound message ───────────────────────────────────────────
-  conversations.addExchange(contactId, {
-    direction: 'inbound',
+  // ── 3. Record this inbound message — ATOMIC CLAIM ───────────────────────────
+  // Closes the race window between this caller (webhook or reconciliation
+  // poller) and any other caller processing the same GHL messageId. The
+  // upfront 0a check is a fast-path optimization; this claim is the
+  // authoritative single-winner gate. Backed by a partial unique index on
+  // exchanges(message_id) — DB-enforced, app cannot accidentally bypass.
+  // If we lost (rowCount=0), Claude is never called for this message.
+  const claimed = await conversations.tryClaimInbound(contactId, {
     body: messageBody,
     step: conversations.get(contactId)?.currentStep || 0,
-    conversationId
+    conversationId,
+    messageId: messageId || null
   });
+  if (!claimed) {
+    console.log(`[Webhook] Race lost — messageId ${messageId} already claimed for ${contactId}, skipping AI`);
+    return;
+  }
 
   // Cancel any pending follow-up jobs before processing the reply (they replied — no hooks needed)
   followups.cancelContactJobs(contactId);
@@ -2169,16 +2199,35 @@ app.post('/api/admin/manual-enroll', requireAdmin, async (req, res) => {
 
 // ─── Admin: Replay a missed inbound message ───────────────────────────────────
 app.post('/api/admin/replay-inbound', requireAdmin, async (req, res) => {
-  const { contactId, messageBody } = req.body || {};
+  const { contactId, messageBody, messageId } = req.body || {};
   if (!contactId || !messageBody) {
     return res.status(400).json({ error: 'contactId and messageBody are required' });
   }
   res.json({ ok: true, message: 'Replay triggered — AI is generating a response now.' });
   try {
-    await handleInbound({ contactId, conversationId: null, messageBody, firstName: '', city: '', phone: '' });
+    await handleInbound({ contactId, conversationId: null, messageBody, firstName: '', city: '', phone: '', messageId: messageId || null });
     console.log(`[Admin] Replay-inbound complete for ${contactId}`);
   } catch (err) {
     console.error(`[Admin] Replay-inbound error for ${contactId}:`, err.message);
+  }
+});
+
+// ─── Admin: Reconciliation poller status ──────────────────────────────────────
+// Returns recent replays + cycle stats so the admin panel can show the poller
+// is alive and what it's catching. Manual `?run=1` triggers an immediate run.
+app.get('/api/admin/reconciliation', requireAdmin, async (req, res) => {
+  try {
+    if (req.query.run === '1') {
+      // Fire-and-await so the response includes the freshly-updated stats.
+      await reconciliation.runReconciliation();
+    }
+    res.json({
+      stats: reconciliation.getStats(),
+      replays: reconciliation.getRecentReplays(),
+      devMode: DEV_MODE
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -3409,8 +3458,14 @@ app.listen(PORT, () => {
   brain.startScheduledAnalysis();
   if (DEV_MODE) {
     console.log('[Followups] DEV MODE — scheduler not started (no jobs will fire locally)');
+    console.log('[Reconciliation] DEV MODE — scheduler not started (would have polled GHL every 30s)');
   } else {
     followups.startScheduler();
+    // Register handleInbound with the reconciliation module to break the
+    // circular require (reconciliation.js needs handleInbound; server.js
+    // needs reconciliation). Done here, after handleInbound is defined.
+    reconciliation.setHandleInbound(handleInbound);
+    reconciliation.startScheduler(30 * 1000);
   }
   Promise.all([bootstrapStateFromGHL(), conversations.whenReady()])
     .then(() => {
@@ -3772,6 +3827,16 @@ ${DEV_MODE ? `<div style="position:fixed;top:0;left:0;right:0;z-index:9999;backg
     </div>
     <div id="replay-selected" style="font-size:12px;color:#64748b;margin-top:8px"></div>
     <div id="replay-status" style="font-size:13px;margin-top:8px;font-weight:600"></div>
+  </div>
+
+  <div class="subpanel-divider">
+    <div class="subpanel-title">Webhook Reconciliation Poller</div>
+    <div class="subpanel-desc">Background safety net that polls GHL every 30 seconds for inbound messages the webhook may have missed and replays them through the AI. Anything caught here is shown below — if this list is empty most days, the webhook is delivering reliably.</div>
+    <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin-bottom:10px">
+      <button class="action-btn action-btn-info" id="recon-run-btn" onclick="runReconciliationNow(this)">↻ Run Now</button>
+      <span id="recon-summary" style="font-size:12px;color:#64748b;font-weight:500">Loading&hellip;</span>
+    </div>
+    <div id="recon-replays-list" style="font-size:13px;color:#94a3b8">Loading&hellip;</div>
   </div>
 </div>
 
@@ -4662,7 +4727,54 @@ async function resetSpend(contactId) {
   }
 }
 
-function loadAll() { loadFollowups(); loadBrain(); loadSpend(); loadAwaitingConfirmation(); refreshPauseState(); loadIssues(); }
+async function loadReconciliation(opts) {
+  const summaryEl = document.getElementById('recon-summary');
+  const listEl = document.getElementById('recon-replays-list');
+  const runFlag = opts && opts.run ? '?run=1' : '';
+  try {
+    const res = await fetchWithTimeout('/api/admin/reconciliation' + runFlag, { headers: { 'x-admin-key': ADMIN_KEY } }, 35000);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const s = data.stats || {};
+    const replays = data.replays || [];
+    const lastRunStr = s.lastRunAt ? new Date(s.lastRunAt).toLocaleTimeString() : 'never';
+    const startedStr = s.startedAt ? new Date(s.startedAt).toLocaleString() : (data.devMode ? 'DEV MODE — not running' : 'not started');
+    summaryEl.textContent =
+      'Last run: ' + lastRunStr +
+      ' | Cycles: ' + (s.totalRuns || 0) +
+      ' | Replays today: ' + replays.filter(r => r.ts > Date.now() - 86400000).length +
+      ' | Total replays: ' + (s.totalReplays || 0) +
+      ' | Started: ' + startedStr;
+    if (replays.length === 0) {
+      listEl.innerHTML = '<div style="padding:10px 0;color:#94a3b8">No replays yet — the webhook is keeping up.</div>';
+    } else {
+      listEl.innerHTML = replays.slice(0, 10).map(function(r) {
+        const when = new Date(r.ts).toLocaleString();
+        const name = (r.firstName || r.contactId || '').replace(/[<>&]/g, '');
+        const preview = (r.bodyPreview || '').replace(/[<>&]/g, '');
+        const devTag = r.devModeSkipped ? ' <span style="color:#f59e0b;font-weight:600">[DEV — skipped]</span>' : '';
+        return '<div style="padding:8px 10px;border-bottom:1px solid rgba(203,213,225,.4)">' +
+          '<div style="font-weight:600;color:#0f172a">' + name + devTag + ' <span style="color:#64748b;font-weight:500;font-size:11px">' + when + '</span></div>' +
+          '<div style="color:#475569;font-size:12px;margin-top:2px">&ldquo;' + preview + '&rdquo;</div>' +
+          '</div>';
+      }).join('');
+    }
+  } catch (err) {
+    summaryEl.textContent = 'Error loading: ' + err.message;
+  }
+}
+async function runReconciliationNow(btn) {
+  btn.disabled = true;
+  const original = btn.textContent;
+  btn.textContent = 'Running…';
+  try {
+    await loadReconciliation({ run: true });
+  } finally {
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+}
+function loadAll() { loadFollowups(); loadBrain(); loadSpend(); loadAwaitingConfirmation(); refreshPauseState(); loadIssues(); loadReconciliation(); }
 loadAll();
 
 let secondsLeft = 30;

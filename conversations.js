@@ -59,10 +59,20 @@ async function initFromDb() {
           // after a restart and let dupes through.
           type:           ex.extra?.type || null,
           variant:        ex.extra?.variant || null,
+          messageId:      ex.message_id || null,
           timestamp:      ex.ts
         });
       }
     }
+    // Partial unique index on message_id — defense-in-depth so the DB itself
+    // refuses two inbound rows for the same GHL message even if the app-layer
+    // dedup check races. Existing rows with NULL message_id are unaffected
+    // (PostgreSQL allows multiple NULLs in a unique index, and the partial
+    // WHERE clause makes that explicit). Idempotent — safe on every boot.
+    await pool.query(
+      `CREATE UNIQUE INDEX IF NOT EXISTS exchanges_message_id_unique
+         ON exchanges (message_id) WHERE message_id IS NOT NULL`
+    ).catch(err => console.error('[Conversations] message_id unique index ensure error:', err.message));
     _ready = true;
     console.log(`[Conversations] DB loaded: ${Object.keys(_cache).length} contacts, ${exRows.length} exchanges`);
   } catch (err) {
@@ -139,10 +149,15 @@ function _dbUpsertContact(record) {
   ).catch(err => console.error('[Conversations] DB upsert error:', err.message));
 }
 
+// Returns a promise that resolves to the rowCount of the insert. Outbound
+// rows always have null messageId so ON CONFLICT never fires; inbound rows
+// with a duplicate messageId silently no-op (returning rowCount=0), which
+// `tryClaimInbound` uses to detect a lost race against another caller.
 function _dbInsertExchange(contactId, exchange) {
-  pool.query(
-    `INSERT INTO exchanges (contact_id, role, content, step, ts, direction, extra)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+  return pool.query(
+    `INSERT INTO exchanges (contact_id, role, content, step, ts, direction, extra, message_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     ON CONFLICT DO NOTHING`,
     [
       contactId,
       exchange.direction === 'outbound' ? 'assistant' : 'user',
@@ -156,9 +171,27 @@ function _dbInsertExchange(contactId, exchange) {
         // Persist the message-class marker (e.g. 'followup-hook-pos1',
         // 'silence-nudge') so dedup checks survive a server restart.
         type: exchange.type || null
-      })
+      }),
+      exchange.messageId || null
     ]
-  ).catch(err => console.error('[Conversations] DB exchange insert error:', err.message));
+  ).catch(err => { console.error('[Conversations] DB exchange insert error:', err.message); return { rowCount: 0 }; });
+}
+
+// Look up an exchange row by GHL messageId. Returns the row if found, null
+// otherwise. Used by the reconciliation poller to dedup — if a missed inbound
+// later arrives via the webhook (or vice versa), we never double-process it.
+async function hasExchangeWithMessageId(messageId) {
+  if (!messageId) return false;
+  try {
+    const { rows } = await pool.query(
+      `SELECT 1 FROM exchanges WHERE message_id = $1 LIMIT 1`,
+      [messageId]
+    );
+    return rows.length > 0;
+  } catch (err) {
+    console.error('[Conversations] hasExchangeWithMessageId error:', err.message);
+    return false;
+  }
 }
 
 // ─── Public sync API (reads from cache) ───────────────────────────────────────
@@ -225,12 +258,60 @@ function addExchange(contactId, exchange) {
     // dedup checks throughout the codebase look at this field. Previously
     // dropped silently, which made every dedup check a no-op.
     type:           exchange.type || null,
+    // GHL messageId — required for the reconciliation poller's dedup check
+    // (`hasExchangeWithMessageId`). For outbound rows this is always null
+    // and `_dbInsertExchange`'s ON CONFLICT clause never fires.
+    messageId:      exchange.messageId || null,
     timestamp:      ts
   };
   _cache[contactId].exchanges.push(ex);
   _cache[contactId].lastMessageAt = Date.now();
   _dbInsertExchange(contactId, ex);
   _dbUpsertContact(_cache[contactId]);
+}
+
+// Atomic inbound claim. Used by `handleInbound` to guarantee that the
+// webhook and the reconciliation poller cannot both proceed past the
+// recording step for the same GHL message — only one wins, the other gets
+// `false` back and bails before calling Claude. Resolves the race window
+// between the cheap-dedup check at the top of handleInbound and the
+// addExchange call further down (during which the other caller could
+// also have passed the same cheap check).
+//
+// Returns true if we won (caller should continue), false if the messageId
+// was already claimed by another path (caller should silently return).
+async function tryClaimInbound(contactId, exchange) {
+  if (!_cache[contactId]) return false;
+  const ts = exchange.timestamp && typeof exchange.timestamp === 'number' && exchange.timestamp > 0
+    ? exchange.timestamp : Date.now();
+  const ex = {
+    direction:      'inbound',
+    body:           exchange.body,
+    step:           exchange.step || null,
+    conversationId: exchange.conversationId || null,
+    variant:        exchange.variant || null,
+    type:           exchange.type || null,
+    messageId:      exchange.messageId || null,
+    timestamp:      ts
+  };
+  // No messageId means no atomic claim possible — fall back to the
+  // pre-existing fire-and-forget behavior. (Should not happen in practice
+  // since handleInbound only reaches this for inbounds, but kept for safety.)
+  if (!ex.messageId) {
+    _cache[contactId].exchanges = _cache[contactId].exchanges || [];
+    _cache[contactId].exchanges.push(ex);
+    _cache[contactId].lastMessageAt = Date.now();
+    _dbInsertExchange(contactId, ex);
+    _dbUpsertContact(_cache[contactId]);
+    return true;
+  }
+  const result = await _dbInsertExchange(contactId, ex);
+  if (!result || result.rowCount === 0) return false; // lost the race
+  _cache[contactId].exchanges = _cache[contactId].exchanges || [];
+  _cache[contactId].exchanges.push(ex);
+  _cache[contactId].lastMessageAt = Date.now();
+  _dbUpsertContact(_cache[contactId]);
+  return true;
 }
 
 // ─── Lead Form parsing ────────────────────────────────────────────────────────
@@ -260,4 +341,4 @@ function parseLeadForm(tags) {
 // Kick off DB load immediately — store the promise so callers can await readiness
 const _initPromise = initFromDb();
 
-module.exports = { get, set, update, getAll, ensureContact, addExchange, initFromDb, parseLeadForm, whenReady: () => _initPromise };
+module.exports = { get, set, update, getAll, ensureContact, addExchange, tryClaimInbound, hasExchangeWithMessageId, initFromDb, parseLeadForm, whenReady: () => _initPromise };
