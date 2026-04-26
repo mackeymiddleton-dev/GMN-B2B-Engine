@@ -2500,10 +2500,10 @@ app.get('/api/brain/variants', requireAdmin, (req, res) => {
     const enabledList = prompts.getEnabledVariants();
     const allContacts = conversations.getAll();
 
-    // Optional Lead Form filter — when provided, only contacts whose
-    // current `leadForm` matches are counted. Used by the Variant Performance
-    // view to compare variants within a specific GHL lead form.
+    // Optional filters — leadForm and days compose, matching /api/brain/stats behaviour
     const leadFormFilter = (req.query.leadForm || '').toString().trim().toLowerCase() || null;
+    const days = parseInt(req.query.days, 10) || null;
+    const cutoff = days ? Date.now() - days * 86400000 : null;
 
     const counts = { A: { assigned: 0, repliedOnce: 0, replied4: 0, booked: 0 },
                      B: { assigned: 0, repliedOnce: 0, replied4: 0, booked: 0 },
@@ -2523,6 +2523,7 @@ app.get('/api/brain/variants', requireAdmin, (req, res) => {
       const cForm = c.leadForm || 'unknown';
       leadFormSet.add(cForm);
       if (leadFormFilter && cForm !== leadFormFilter) continue;
+      if (cutoff && (c.createdAt || 0) < cutoff) continue;
       if (!c.variant || !counts[c.variant]) continue;
       const vc = counts[c.variant];
       vc.assigned++;
@@ -4581,11 +4582,11 @@ async function loadBrain() {
     // Each row is a Facebook lead form bucket (derived from the
     // \`ampifyform:<slug>\` GHL tag at enrollment / tag update). A new tag
     // automatically becomes a new row — no code change needed.
-    // When a form filter is active this table is suppressed (you're already
-    // looking at one form, so the cross-form comparison isn't meaningful).
+    // When a form filter is active, brain.getStats() has already narrowed the
+    // data, so this table naturally collapses to the one matching row.
     const leadFormEntries = Object.entries(data.byLeadForm || {})
       .sort((a, b) => (b[1].leads || 0) - (a[1].leads || 0));
-    const leadFormHtml = (!currentLeadForm && leadFormEntries.length > 0) ? \`
+    const leadFormHtml = leadFormEntries.length > 0 ? \`
       <div style="margin-top:28px;border-top:1px solid rgba(203,213,225,.6);padding-top:20px">
         <div style="font-size:12px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Lead Form Performance</div>
         <div style="font-size:12px;color:#64748b;margin-bottom:12px;line-height:1.6">
@@ -4618,11 +4619,14 @@ async function loadBrain() {
       </div>\` : '';
 
     // ── Variant Performance ──────────────────────────────────────────────────
-    // Lead form filter is driven by the global currentLeadForm (set at the top
-    // of the page). No per-panel chips needed here any more.
+    // Lead form and day filters are driven by the globals set at the top of
+    // the page. Both compose — same as /api/brain/stats.
     let variantRows = '';
     try {
-      const vUrl = '/api/brain/variants' + (currentLeadForm ? ('?leadForm=' + encodeURIComponent(currentLeadForm)) : '');
+      const vParams = [];
+      if (currentDays) vParams.push('days=' + currentDays);
+      if (currentLeadForm) vParams.push('leadForm=' + encodeURIComponent(currentLeadForm));
+      const vUrl = '/api/brain/variants' + (vParams.length ? '?' + vParams.join('&') : '');
       const vRes = await fetch(vUrl, { headers: { 'x-admin-key': ADMIN_KEY } });
       if (vRes.ok) {
         const vData = await vRes.json();
