@@ -3840,9 +3840,9 @@ function issueCard(i) {
         '<div style="font-size:12px;color:#64748b;margin-top:4px">' + badge + '<span style="margin-left:8px">Saved ' + fmtIssueTime(i.createdAt) + '</span>' + contact + '</div>' +
       '</div>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
-        '<button class="action-btn" onclick=\'editIssue(' + JSON.stringify(i.id) + ')\'>Edit</button>' +
-        '<button class="action-btn action-btn-info" onclick=\'toggleIssueStatus(' + JSON.stringify(i.id) + ')\'>' + statusToggle + '</button>' +
-        '<button class="action-btn action-btn-warn" onclick=\'deleteIssue(' + JSON.stringify(i.id) + ')\'>Delete</button>' +
+        '<button class="action-btn" onclick="editIssue(&#39;' + i.id + '&#39;)">Edit</button>' +
+        '<button class="action-btn action-btn-info" onclick="toggleIssueStatus(&#39;' + i.id + '&#39;)">' + statusToggle + '</button>' +
+        '<button class="action-btn action-btn-warn" onclick="deleteIssue(&#39;' + i.id + '&#39;)">Delete</button>' +
       '</div>' +
     '</div>' +
     '<div style="margin-top:10px;font-size:13px;color:#475569;line-height:1.6"><strong>Problem:</strong> ' + escHtml(i.issue || '') + '</div>' +
@@ -4319,9 +4319,9 @@ function replaySearchContacts(query) {
     dd.style.display = 'block';
     dd.innerHTML = matches.map(c => {
       const name = [c.firstName, c.lastName].filter(Boolean).join(' ') || c.contactId;
-      return '<div onclick="replaySelectContact(' + JSON.stringify(c.contactId) + ',' + JSON.stringify(name) + ')"' +
+      return '<div onclick="replaySelectContact(&#39;' + c.contactId + '&#39;,&#39;' + escHtml(name).replace(/'/g, '&#39;') + '&#39;)"' +
         ' style="padding:10px 14px;font-size:13px;color:#334155;cursor:pointer;border-bottom:1px solid rgba(226,232,240,.6);font-weight:500"' +
-        ' onmouseover="this.style.background=\'rgba(236,253,245,.6)\'" onmouseout="this.style.background=\'\'">' + escHtml(name) + '</div>';
+        ' onmouseover="this.style.background=&#39;rgba(236,253,245,.6)&#39;" onmouseout="this.style.background=&#39;&#39;">' + escHtml(name) + '</div>';
     }).join('');
   }
 
