@@ -33,10 +33,15 @@ const ghl = require('./ghl');
 const optouts = require('./optouts');
 const { DEV_MODE } = require('./devmode');
 
-const POLL_WINDOW_MS = 10 * 60 * 1000;        // only replay inbounds <10 min old
+const POLL_WINDOW_MS = 60 * 60 * 1000;        // only replay inbounds <60 min old
 const ACTIVE_WINDOW_MS = 24 * 60 * 60 * 1000; // only poll contacts active <24h
 const MAX_REPLAYS_LOG = 50;                   // keep last N for the admin panel
 const PER_CONTACT_FETCH_LIMIT = 20;           // GHL messages page size per poll
+
+// In-memory cache of resolved conversationIds. Bounds GHL API calls when an
+// older contact's exchanges all carry conversationId=null (legacy data, or
+// pre-fix opener rows). One lookup per contact per process lifetime.
+const _convIdCache = new Map();
 
 // Lazy-loaded to avoid a circular require with server.js (which requires this
 // module to start the scheduler). Resolved on first run via require cache.
@@ -127,7 +132,33 @@ async function _selectCandidates() {
     for (let i = exchanges.length - 1; i >= 0 && i >= exchanges.length - 10; i--) {
       if (exchanges[i]?.conversationId) { conversationId = exchanges[i].conversationId; break; }
     }
-    if (!conversationId) continue; // can't poll without a conversationId
+
+    // Fallback: legacy data (and contacts whose opener was sent before the
+    // trap #9 opener-fix shipped) may have ALL exchanges with
+    // conversationId=null. Without recovery here, those contacts are
+    // permanently invisible to the poller and any dropped inbound is lost
+    // forever. Resolve on demand from GHL and cache so we make at most one
+    // lookup per contact per process lifetime. Failed/null results are also
+    // cached (as null) — a contact whose GHL search returns nothing is
+    // almost always a permanent state (deleted, wrong location, etc.) and
+    // re-trying every 30s would just hammer GHL for no benefit.
+    if (!conversationId) {
+      if (_convIdCache.has(contactId)) {
+        conversationId = _convIdCache.get(contactId); // may be null (negative cache hit)
+      } else {
+        try {
+          conversationId = await ghl.getOrCreateConversation(contactId);
+          _convIdCache.set(contactId, conversationId || null);
+          if (conversationId) {
+            console.log(`[Reconciliation] Resolved conversationId via GHL fallback for ${contactId}`);
+          }
+        } catch (err) {
+          _convIdCache.set(contactId, null); // negative cache: don't retry on every cycle
+          console.warn(`[Reconciliation] GHL conversationId fallback failed for ${contactId}:`, err.message);
+        }
+      }
+    }
+    if (!conversationId) continue; // genuinely unresolvable — skip this cycle
 
     candidates.push({ contactId, contact, conversationId });
   }
@@ -168,17 +199,37 @@ async function _processCandidate({ contactId, contact, conversationId }) {
   const cutoff = Date.now() - POLL_WINDOW_MS;
 
   // Sort ascending by ts so we replay in chronological order.
-  const normalized = messages
+  const allNormalized = messages
     .map(m => _normalizeGhlMessage(m, conversationId))
-    .filter(n => n && n.direction === 'inbound' && n.body && n.messageId && n.ts && n.ts >= cutoff)
+    .filter(n => n && n.body && n.ts);
+
+  const normalized = allNormalized
+    .filter(n => n.direction === 'inbound' && n.messageId && n.ts >= cutoff)
     .sort((a, b) => a.ts - b.ts);
+
+  // Collect outbound timestamps from the SAME GHL thread we just fetched.
+  // This is critical: the inbound webhook handler (`server.js`) deliberately
+  // skips outbound webhook events, so a human typing a reply in the GHL UI
+  // never lands in our local `exchanges` table. `_hasLaterOutbound` only
+  // checks local exchanges and would miss that case — leading to duplicate
+  // AI replies on top of a human's. With the wider 60-min POLL_WINDOW the
+  // odds of this happening are non-trivial. Source-of-truth gate.
+  const ghlOutboundTimestamps = allNormalized
+    .filter(n => n.direction === 'outbound')
+    .map(n => n.ts);
 
   for (const msg of normalized) {
     // Dedup against our exchanges table.
     if (await conversations.hasExchangeWithMessageId(msg.messageId)) continue;
 
     // Don't replay if we (or a human) already responded after this inbound.
+    // Two checks: local exchanges (AI replies our system sent), and GHL
+    // thread outbounds (catches human-typed replies the webhook skipped).
     if (_hasLaterOutbound(contact, msg.ts)) continue;
+    if (ghlOutboundTimestamps.some(ts => ts > msg.ts)) {
+      console.log(`[Reconciliation] Skipping ${contactId} inbound ${msg.messageId} — human/UI reply in GHL thread already exists after it`);
+      continue;
+    }
 
     // Final opt-out check — could have changed since _selectCandidates.
     if (await optouts.isOptedOut(contactId)) continue;

@@ -572,6 +572,7 @@ async function generateAndSendOpener(contactId) {
     // gates DEV_MODE internally; this outer gate matches the explicit pattern
     // used elsewhere in the codebase and makes the dev-vs-prod path obvious.)
     let sendResult;
+    let openerConvId = null;
     if (DEV_MODE) {
       console.log(`[Opener][DEV MODE] Generated opener for ${contactId} (variant ${variant || 'none'}), not sending: "${openerText.slice(0, 120)}"`);
       sendResult = { id: 'dev-mode-stub' };
@@ -581,6 +582,18 @@ async function generateAndSendOpener(contactId) {
         console.error(`[Opener] GHL send returned null for ${contactId} — not persisting`);
         return;
       }
+      // Resolve conversationId so the reconciliation poller (trap #9 safety
+      // net) can poll this contact if any future inbound webhook is dropped
+      // by GHL. Without this, the contact's exchanges all carry
+      // conversationId=null and the poller skips them entirely — meaning a
+      // dropped reply is never recovered. Best-effort: a failed lookup just
+      // means we lose the recon safety net for this one contact, not a
+      // hard error.
+      try {
+        openerConvId = await ghl.getOrCreateConversation(contactId);
+      } catch (err) {
+        console.warn(`[Opener] Could not resolve conversationId for ${contactId}:`, err.message);
+      }
     }
 
     // Persist as Hook 1 so the silence-check dedup correctly suppresses
@@ -589,7 +602,7 @@ async function generateAndSendOpener(contactId) {
       direction: 'outbound',
       body: openerText,
       step: detectedStep ?? 0,
-      conversationId: null,
+      conversationId: openerConvId,
       type: 'followup-hook-pos1',
       variant
     });
