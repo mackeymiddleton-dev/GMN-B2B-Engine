@@ -498,8 +498,16 @@ const _openerInProgress = new Set();
 async function notifySid(text) {
   if (!process.env.SID_GHL_CONTACT_ID) return;
   if (DEV_MODE) { console.log('[Notify][DEV MODE] Would have texted Sid: ' + text); return; }
-  try { await ghl.sendMessage(process.env.SID_GHL_CONTACT_ID, text); }
-  catch (err) { console.warn('[Notify] Sid alert failed: ' + err.message); }
+  try {
+    // ghl.sendMessage swallows its own errors and returns null on failure
+    // (see ghl.js line ~69), so a falsy return is the failure signal we have
+    // to surface here. The try/catch is kept as a belt-and-suspenders in case
+    // the wrapper ever stops swallowing.
+    const result = await ghl.sendMessage(process.env.SID_GHL_CONTACT_ID, text);
+    if (!result) console.warn('[Notify] Sid alert failed: ghl.sendMessage returned null (see [GHL] sendMessage error log above for details)');
+  } catch (err) {
+    console.warn('[Notify] Sid alert failed: ' + err.message);
+  }
 }
 
 async function generateAndSendOpener(contactId) {
