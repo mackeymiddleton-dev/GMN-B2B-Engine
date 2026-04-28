@@ -100,7 +100,7 @@ const DEFAULTS = {
   'followup.hook': config.followUpPrompts?.hook || '',
   'followup.nurture': config.followUpPrompts?.nurture || '',
   'followup.system': 'You are a sales text-message copywriter. Return ONLY the message text — no quotes, no preamble, no explanation.',
-  'email.system': 'You are a sales assistant emailing audiology practice owners on behalf of Powered Up AI. Your emails are extremely short — 1 to 2 sentences max, no paragraphs, no greetings, no formal sign-offs. Write like a quick note from someone who already knows their situation. Always return valid JSON only: {"subject": "...", "body": "..."}. No preamble, no explanation, no markdown.',
+  'email.system': 'You are a sales assistant emailing audiology practice owners on behalf of Ampify AI. Your emails are extremely short — 1 to 2 sentences max, no paragraphs, no greetings, no formal sign-offs. Write like a quick note from someone who already knows their situation. Always return valid JSON only: {"subject": "...", "body": "..."}. No preamble, no explanation, no markdown.',
 
   'email.hook': `Write a short follow-up email to {{firstName}}{{practiceName}}.
 
