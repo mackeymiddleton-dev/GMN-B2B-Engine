@@ -1410,6 +1410,8 @@ async function generateAndSendAiReply(contactId, resolvedConvId, opts = {}) {
       /\btalk\s+to\s+(?:someone|a\s+(?:real\s+)?person|a\s+human|sid|the\s+founder)\b/i,
       /\bspeak\s+(?:to|with)\s+(?:someone|a\s+(?:real\s+)?person|a\s+human|sid|the\s+founder)\b/i,
       /\bhave\s+(?:someone|sid)\s+(?:call|reach\s+out|contact)\s+me\b/i,
+      /\bi\s+(?:want|need)\s+(?:a\s+)?human\b/i,
+      /\bi\s+(?:want|need)\s+(?:to\s+)?(?:talk|speak)\s+to\s+(?:someone|a\s+(?:real\s+)?person|a\s+human)\b/i,
       /\b(?:i\s+)?(?:don'?t|do\s+not)\s+want\s+(?:to\s+talk\s+to\s+)?(?:an?\s+)?ai\b/i,
       /\b(?:i\s+)?(?:don'?t|do\s+not)\s+want\s+(?:to\s+talk\s+to\s+)?(?:an?\s+)?(?:chat\s?)?bot\b/i,
       /\bchat\s?bot\b/i,
