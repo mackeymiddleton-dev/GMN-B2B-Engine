@@ -378,6 +378,22 @@ app.post('/webhooks/ghl/inbound', async (req, res) => {
     return res.json({ received: true, skipped: 'outbound' });
   }
 
+  // ── Activity-event guard (added Apr 28, 2026) ────────────────────────────────
+  // GHL fires inbound webhooks for non-message events too: DnD toggles
+  // ("DnD enabled by customer"), opportunity-stage changes, contact tag
+  // updates, etc. These carry messageType values like TYPE_ACTIVITY_CONTACT
+  // or TYPE_ACTIVITY_OPPORTUNITY and a body string describing the event.
+  // Without this filter the activity body slips into handleInbound, gets
+  // treated as a prospect reply, and triggers an AI generation that — with
+  // no real conversational context — defaults to re-emitting Step 1.
+  // Root cause of the duplicate-opener regression observed for Kate
+  // (dPr5UoTRyB66NMsKZj08, variant C) on Apr 28.
+  const _msgType = payload.messageType || payload.message?.messageType || '';
+  if (typeof _msgType === 'string' && _msgType.startsWith('TYPE_ACTIVITY')) {
+    console.log(`[Webhook] Skipping non-SMS activity event: ${_msgType}`);
+    return res.json({ received: true, skipped: 'activity-event' });
+  }
+
   // Acknowledge immediately — GHL expects a fast 200
   res.json({ received: true });
 
@@ -915,10 +931,13 @@ app.post('/webhooks/ghl/contact-updated', async (req, res) => {
 function recoverStateFromHistory(contactId, fresh, rawGhlMessages) {
   if (!rawGhlMessages || rawGhlMessages.length === 0) return;
 
-  // GHL messages come newest-first — find the most recent outbound we sent
+  // GHL messages come newest-first — find the most recent outbound we sent.
+  // (Direction is always a string in GHL's fetch shape; the bogus
+  // `m.type === 2` fallback was removed Apr 28, 2026 — type=2 is TYPE_SMS,
+  // a messageType code, not a direction.)
   const lastOutbound = rawGhlMessages.find(m => {
-    const isInbound = m.direction === 'inbound' || m.direction === 2 ||
-                      m.messageType === 'inbound' || m.type === 2;
+    const isInbound = m.direction === 'inbound' ||
+                      m.messageType === 'inbound';
     return !isInbound;
   });
   if (!lastOutbound) return;
@@ -1641,31 +1660,57 @@ function buildMessagesFromGhl(ghlMessages) {
   // GHL returns messages newest-first — reverse to chronological order for Claude
   const chronological = [...ghlMessages].reverse();
 
+  // GHL appends "\nReply STOP to unsubscribe." to the FIRST outbound of every
+  // new conversation as a TCPA compliance footer. When fetched back, that
+  // suffix used to cause the entire opener to be dropped here as a "system
+  // message" — leaving Claude with no conversational context and triggering
+  // a duplicate-opener regeneration on the prospect's first reply. Strip the
+  // suffix instead of dropping the message. (Root cause of the recurring
+  // duplicate-opener bug fixed Apr 28, 2026.)
+  const TCPA_OPTOUT_SUFFIX = /[\s\.]*Reply\s+STOP\s+to\s+unsubscribe\.?\s*$/i;
+
   const mapped = chronological
     .filter(m => m.body || m.message)
     .filter(m => {
       // Drop outbound messages that GHL/Twilio failed to deliver — Claude should
       // not treat them as received by the prospect.
-      const outbound = m.direction === 'outbound' || m.direction === 1 ||
-                       m.messageType === 'outbound' || m.type === 1;
+      // NOTE: in GHL's /conversations/messages fetch shape, `direction` is
+      // always a string ('inbound' | 'outbound'). The numeric `type` field is
+      // the *messageType code* (1=CALL, 2=SMS, 25=ACTIVITY_CONTACT, …) — NOT
+      // a direction code. An earlier `m.type === 1` fallback here mis-flagged
+      // every outbound SMS as inbound. Removed Apr 28, 2026.
+      const outbound = m.direction === 'outbound' ||
+                       m.messageType === 'outbound';
       if (outbound && m.status === 'failed') return false;
+      // Drop GHL activity / system-event entries (DnD toggles, opportunity-stage
+      // changes, contact tag updates). They aren't real messages and would
+      // pollute Claude's view of the conversation.
+      const mt = m.messageType || m.type || '';
+      if (typeof mt === 'string' && mt.startsWith('TYPE_ACTIVITY')) return false;
       // Strip automated GHL system messages (CRM notifications, workflow triggers, etc.)
       const text = (m.body || m.message || '').trim();
       if (/CRM ID:/i.test(text)) return false;
       if (/opportunity created/i.test(text)) return false;
-      if (/reply STOP to unsubscribe/i.test(text)) return false;
+      // Don't drop messages that merely CONTAIN the TCPA opt-out boilerplate —
+      // GHL appends it as a suffix to legitimate first outbounds. The suffix
+      // is stripped in the .map() below and the body is preserved.
       return true;
     })
     .map(m => {
-      // GHL direction: 1 = outbound (AI), 2 = inbound (prospect)
+      // GHL fetch shape: `direction` is always a string. Same bug as above —
+      // `m.type === 2` was a bogus direction-fallback (type=2 is TYPE_SMS,
+      // a messageType code, not a direction). Removed Apr 28, 2026.
       const isInbound =
         m.direction === 'inbound' ||
-        m.direction === 2 ||
-        m.messageType === 'inbound' ||
-        m.type === 2;
+        m.messageType === 'inbound';
+      let content = (m.body || m.message || '').trim();
+      // Outbound-only: strip the TCPA opt-out suffix appended by GHL.
+      if (!isInbound) {
+        content = content.replace(TCPA_OPTOUT_SUFFIX, '').trim();
+      }
       return {
         role: isInbound ? 'user' : 'assistant',
-        content: (m.body || m.message || '').trim()
+        content
       };
     })
     .filter(m => m.content.length > 0);
@@ -1691,8 +1736,16 @@ function mergeAndNormalise(messages) {
       merged.push({ role: m.role, content: m.content });
     }
   }
-  // Claude requires messages to start with 'user'
-  while (merged.length > 0 && merged[0].role !== 'user') merged.shift();
+  // Claude requires the first message to be 'user'. Every funnel legitimately
+  // starts with the bot's opener (assistant), so naively shifting it off would
+  // erase the entire conversational context — leaving Claude with just the
+  // prospect's reply and CURRENT STEP=N, which causes it to default to
+  // re-emitting Step 1 (the duplicate-opener regression seen Apr 28, 2026).
+  // Instead, prepend a synthetic user trigger that mirrors the prompt used by
+  // generateAndSendOpener so the opener stays visible as assistant context.
+  if (merged.length > 0 && merged[0].role === 'assistant') {
+    merged.unshift({ role: 'user', content: 'Begin the conversation now.' });
+  }
   // Claude must respond to a user turn — strip any trailing assistant messages
   // (e.g. GHL automation messages that appear after the prospect's last reply)
   while (merged.length > 0 && merged[merged.length - 1].role !== 'user') merged.pop();

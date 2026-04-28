@@ -153,6 +153,38 @@ DB error in `_dbAtomicClaim` fails CLOSED (returns false → skip the send) so a
 
 If you renumber steps, restructure the OBJECTIONS section, or do any large prompt edit: re-confirm both blocks survived intact. Verify with `node -e ...` against the prod DB checking both `value.includes('NEVER BOOK BEFORE QUALIFYING')` and `value.includes('HOSTILE / AGGRESSIVE OPT-OUT')` for all four `conversationPrompt.{A,B,C,D}` rows. Stress harness lives at `/tmp/stress.js` (12 brutal scenarios) and `/tmp/retest.js` (7-scenario regression of these two safety properties).
 
+### 10. Duplicate-opener regression — three independent bugs in the message-history pipeline (fixed Apr 28, 2026)
+**Symptom that recurred at least twice in production:** A prospect gets the AI opener, replies "GO" (or any short affirmative), and ~6 seconds later receives the **exact same opener again**. Confirmed cases: `TI5l9x1lezhZcTxGaFVm` (variant A, "New Mountain Outfitters") at 9:04/9:05 PDT — prospect texted STOP after the dupe, lost lead. `dPr5UoTRyB66NMsKZj08` (variant C, "Kate") at 9:13 PDT via a different trigger path. The defensive duplicate-outbound guard at `server.js:~1252` (which retries Claude with a corrective nudge) DID fire but produced the same opener on retry — because the underlying message context was starved.
+
+**Root cause is THREE independent bugs stacking — fix any one of them and the regression goes away, but defense in depth means fixing all three:**
+
+1. **GHL TCPA suffix collides with the system-message filter.** GHL appends `\nReply STOP to unsubscribe.` to the **first** outbound of every new conversation (TCPA workflow setting). Subsequent outbounds in the same conversation do NOT get it. The old `buildMessagesFromGhl` filter at the original line 1656 dropped any message containing `/reply STOP to unsubscribe/i` as a "GHL system message" — which silently ate the bot's own opener every single time. **Fix:** removed the broad drop. Added a `TCPA_OPTOUT_SUFFIX = /[\s\.]*Reply\s+STOP\s+to\s+unsubscribe\.?\s*$/i` regex applied **outbound-only in the .map() step** to STRIP the suffix while preserving the message body. CRM-ID and "opportunity created" drops are kept (those really are GHL automation).
+
+2. **`mergeAndNormalise` shifted off the leading assistant turn — erasing all conversational context.** Anthropic's API requires `messages` to start with `role: 'user'`. Every funnel legitimately starts with the bot's opener (assistant), so the original `while merged[0].role !== 'user' merged.shift()` removed the opener from history. With only `[user: "GO"]` left and a `CURRENT STEP: 1` system-prompt suffix, Claude rationally treated it as "begin the conversation" and re-emitted Step 1. **Fix:** replaced the shift with a synthetic prepend — `if (merged[0].role === 'assistant') merged.unshift({role:'user', content:'Begin the conversation now.'})`. The synthetic trigger mirrors the exact prompt used by `generateAndSendOpener` (`server.js:569`), so Claude sees `[user: "Begin", assistant: <opener>, user: "GO"]` and naturally advances to Step 2.
+
+3. **`m.type === 1 / 2` was used as a direction-detection fallback — but `type` is the messageType numeric code, NOT direction.** GHL's `/conversations/messages` fetch shape uses `direction` (string `'inbound'` / `'outbound'`) and `type` (numeric: `1`=CALL, `2`=SMS, `25`=TYPE_ACTIVITY_CONTACT, `28`=TYPE_ACTIVITY_OPPORTUNITY, etc.). The fallbacks `m.direction === 1 || m.type === 1` (outbound) and `m.direction === 2 || m.type === 2` (inbound) caused **every outbound SMS** (type=2) to be mis-classified as inbound. After the .map step, `mergeAndNormalise` would then merge consecutive same-role messages into a single user blob, garbling the entire transcript Claude saw. The TCPA filter (#1) was masking this for the GHL fetch path — when the opener was filtered out, only the prospect's reply remained, accidentally producing valid input. Fixing #1 alone would have made things WORSE without fixing #3. **Fix:** removed the bogus numeric fallbacks in three places — `buildMessagesFromGhl` filter + map (`server.js:~1682, ~1703`), `recoverStateFromHistory` (`server.js:~941`), and `enrollment.js:isInbound` (~line 42). Direction is now `m.direction === 'inbound' || m.messageType === 'inbound'` everywhere.
+
+**Bonus root cause for the Kate case:** GHL fires inbound webhooks for non-message events too — DnD toggles (`messageType: 'TYPE_ACTIVITY_CONTACT'`, body `"DnD enabled by customer"`), opportunity-stage changes, contact tag updates. These slipped through `/webhooks/ghl/inbound` (the original direction guard only checked outbound), got recorded as inbound exchanges, and triggered an AI generation. **Fix:** added a `messageType.startsWith('TYPE_ACTIVITY')` skip at the top of the webhook handler (`server.js:~384`) returning `{ skipped: 'activity-event' }`. Mirrored in `buildMessagesFromGhl` so any historical activity rows still in GHL never reach Claude either.
+
+**Why the duplicate-detection retry didn't save us:** the retry guard at `server.js:~1252` checks `recentOutbounds[last].body` (LOCAL state) against the new draft and retries Claude with a corrective nudge. For New Mountain, local exchanges DID contain the opener — so the comparison correctly detected the duplicate. But the retry call uses the SAME message context, which (per #1+#2+#3 above) was starved of the opener. With nothing to advance from, Claude re-emitted Step 1 again. The guard's final fallback ("keep original draft — better to send a duplicate than nothing") then sent the dupe. **The structural fix above means the guard never has to fire on this scenario** — Claude sees the opener in history and produces Step 2 first try.
+
+**Verification snippet** (run after any future change to the message-history pipeline):
+```js
+const { Pool } = require('pg');
+const ghl = require('./ghl');
+const TCPA = /[\s\.]*Reply\s+STOP\s+to\s+unsubscribe\.?\s*$/i;
+// Pull the GHL fetch for any post-fix opener+GO contact and verify the
+// builder produces 3+ messages with alternating roles starting [user, assistant, user, ...]
+```
+
+**Hard rules going forward:**
+- **NEVER use `m.type === N` as a direction fallback in any GHL message-history parser.** `type` is messageType (a content-kind code), not direction. Direction is `m.direction` (string) or `m.messageType` (string `'inbound'`/`'outbound'`). If you find a new parser site, audit it against this rule.
+- **NEVER drop a GHL message just because its body contains a TCPA opt-out phrase.** Strip the suffix; preserve the body.
+- **NEVER strip a leading-assistant turn from the message history without prepending a synthetic user trigger.** The opener must remain visible to Claude as context, or Step 1 will regenerate.
+- **ALWAYS filter `messageType.startsWith('TYPE_ACTIVITY')` at the inbound webhook entry.** Activity events are not prospect replies.
+
+**Open follow-ups noted by the architect review (NOT yet queued as project tasks):** (a) write a regression-test suite for `buildMessagesFromGhl` + `mergeAndNormalise` covering the four bug shapes above (TCPA suffix, leading-assistant shift, type-vs-direction confusion, activity-event leak); (b) extract a single shared `isInboundMessage(m)` / `isOutboundMessage(m)` / `isActivityEvent(m)` helper module so the four current call sites and any future GHL parser can't re-introduce the `m.type === 2` confusion. Both should be requested as new tasks the next time the agent has a free follow-up slot.
+
 ---
 
 ## Dev Mode (Local UI Testing)

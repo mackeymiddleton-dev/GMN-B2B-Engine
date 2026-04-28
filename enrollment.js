@@ -37,8 +37,11 @@ function hasPendingJob(contactId) {
 // ─── Message parsing ───────────────────────────────────────────────────────────
 
 function isInbound(m) {
-  return m.direction === 'inbound' || m.direction === 2 ||
-         m.messageType === 'inbound' || m.type === 2;
+  // GHL fetch shape: `direction` is always a string ('inbound' | 'outbound').
+  // The numeric `type` field is the *messageType code* (1=CALL, 2=SMS,
+  // 25=ACTIVITY_CONTACT, …) — NOT a direction. The `m.type === 2` fallback
+  // here mis-classified every outbound SMS as inbound; removed Apr 28, 2026.
+  return m.direction === 'inbound' || m.messageType === 'inbound';
 }
 
 function parseDate(val) {
