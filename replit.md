@@ -180,6 +180,9 @@ Setting `DEV_MODE=true` in your local environment puts the server into a safe te
 - Even though you're connected to the live database, no SMS/email goes out (the GHL wrappers are stubbed) and the scheduler doesn't fire follow-ups from your local instance. **You can still write to the database, though** — clicking "enroll lead" or sending a test reply WILL change real production data. Be deliberate.
 - **Never set `DEV_MODE=true` in the Replit Secrets/deployment environment.** It should only exist in your local `.env`.
 
+### Sid handoff alert (optional, SMS-only)
+`SID_GHL_CONTACT_ID` (Replit secret) — optional GHL contact UUID for Sid himself. When set, every `[BOOKED]` write (AI-driven or admin "Confirm" promotion) fires a one-line SMS to that contact via the existing GHL pipe ("🚨 {first name} just booked. Last said: …"). When unset, the alert is a silent no-op and the system runs identically to before — opt-in, zero-risk. In `DEV_MODE` the alert is logged as `[Notify][DEV MODE] Would have texted Sid: …` instead of sending. GHL send failures are logged as `[Notify] Sid alert failed: …` and DO NOT block the booking write. Wire-in points: `server.js` ~line 1458 (post-`[BOOKED]` verbal-commit) and ~line 2358 (admin Promote-to-verbal-commit). No idempotency / deep-links / email fallback by design — kept lightweight (Task #86).
+
 ### What you can safely do in dev mode
 - Design and test any admin UI changes
 - Add new panels, graphs, stats
@@ -252,6 +255,7 @@ PostgreSQL (Neon). The deployed app uses `DATABASE_URL`. The local workspace get
 - `GHL_API_KEY` — GHL API access
 - `GHL_LOCATION_ID` — GHL location identifier
 - `GHL_WEBHOOK_SECRET` — (optional) validates incoming GHL webhook signatures
+- `SID_GHL_CONTACT_ID` — (optional) GHL contact UUID for Sid; when set, fires a one-line SMS alert on every `[BOOKED]` write. See "Sid handoff alert" subsection.
 - `ANTHROPIC_API_KEY` — Claude API access
 - `DATABASE_URL` — PostgreSQL connection string
 - `DEV_MODE` — set to `true` locally only to enable safe dev mode

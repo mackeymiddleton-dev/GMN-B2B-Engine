@@ -488,6 +488,20 @@ app.post('/webhooks/ghl/inbound', async (req, res) => {
 // this Set covers the small window between Claude call and exchange write.
 const _openerInProgress = new Set();
 
+// ─── Sid handoff alert (Task #86) ────────────────────────────────────────────
+// Lightweight one-way SMS to Sid whenever a contact moves into verbal-commit.
+// Reuses the existing GHL pipe — Sid adds himself as a contact in GHL once,
+// puts his contact UUID in SID_GHL_CONTACT_ID. If the env var is unset, this
+// is a silent no-op so the system runs identically to before. DEV_MODE prints
+// a "would have texted" line instead of sending. Failures are logged and
+// swallowed — they MUST NOT block the [BOOKED] write that triggered them.
+async function notifySid(text) {
+  if (!process.env.SID_GHL_CONTACT_ID) return;
+  if (DEV_MODE) { console.log('[Notify][DEV MODE] Would have texted Sid: ' + text); return; }
+  try { await ghl.sendMessage(process.env.SID_GHL_CONTACT_ID, text); }
+  catch (err) { console.warn('[Notify] Sid alert failed: ' + err.message); }
+}
+
 async function generateAndSendOpener(contactId) {
   if (_openerInProgress.has(contactId)) {
     console.log(`[Opener] Skipping ${contactId} — opener generation already in progress`);
@@ -1437,6 +1451,8 @@ async function generateAndSendAiReply(contactId, resolvedConvId, opts = {}) {
       }
       conversations.update(contactId, { booked: true, pausedReason: 'verbal-commit' });
       console.log(`[AiGen] Contact ${contactId} agreed to book — AI paused (paused_reason=verbal-commit), awaiting GHL appointment confirmation`);
+      // Sid handoff alert (Task #86) — fire-and-forget, never blocks the booking write
+      notifySid(`🚨 ${fresh?.firstName || 'Prospect'} just booked. Last said: "${(messageBody || '').slice(0, 140)}"`);
     }
   }
 
@@ -2335,6 +2351,8 @@ app.post('/api/admin/confirm-booking', requireAdmin, async (req, res) => {
   // booking (and won't drift back into the panel after a future dismiss flow).
   conversations.update(contactId, { pausedReason: 'verbal-commit' });
   console.log(`[ConfirmBooking] Admin confirmed booking for ${contact.firstName} (${contactId})`);
+  // Sid handoff alert (Task #86) — fire-and-forget, never blocks the admin response
+  notifySid(`🚨 ${contact.firstName || 'Prospect'} promoted to booking by admin.`);
   res.json({ ok: true, firstName: contact.firstName });
 });
 
