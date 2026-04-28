@@ -2720,9 +2720,10 @@ app.get('/api/brain/variants', requireAdmin, (req, res) => {
       D: _extractStepDescs(variantPromptKeys.D)
     };
 
-    // Column count: floor 7, hard cap 7. Contacts at step > 7 are counted in
-    // S7's funnel (step >= 7 comparison catches them).
-    const maxStep = 7;
+    // Column count: max prompt-defined step across all variants, clamped to 7.
+    // Contacts at steps > 7 are counted in S7's funnel (step >= 7).
+    const maxStepFromPrompts = Math.max(0, ...Object.values(stepDescs).flatMap(d => Object.keys(d).map(Number)));
+    const maxStep = Math.min(Math.max(maxStepFromPrompts, 1), 7);
 
     // Build stepData[variant][stepN] for each step 1..maxStep
     function _buildStepData(variantKey, contacts, assigned) {
