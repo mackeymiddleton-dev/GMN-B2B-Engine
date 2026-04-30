@@ -5206,12 +5206,20 @@ async function loadBrain() {
             return \`<span style="font-weight:600;color:\${col}">\${r}%</span>\`;
           }
           const variantColors = { A: '#748ffc', B: '#f59e0b', C: '#34d399' };
+          function vOptOutPill(rate, raw) {
+            if (rate === null || rate === undefined) return '<span style="color:#94a3b8;font-size:12px">—</span>';
+            const bg   = rate >= 15 ? '#fee2e2' : rate >= 5 ? '#fef3c7' : '#dcfce7';
+            const fg   = rate >= 15 ? '#b91c1c' : rate >= 5 ? '#b45309' : '#16a34a';
+            const ring = rate >= 15 ? '#fca5a5' : rate >= 5 ? '#fcd34d' : '#86efac';
+            const rawTxt = (raw !== undefined && raw !== null) ? ' <span style="font-weight:500;opacity:.75">(' + raw + ')</span>' : '';
+            return '<span style="display:inline-block;padding:2px 9px;border-radius:999px;background:' + bg + ';color:' + fg + ';border:1px solid ' + ring + ';font-weight:700;font-size:12px">' + rate + '%' + rawTxt + '</span>';
+          }
           function vPBestPill(p) {
             if (p === null || p === undefined) return '<span style="color:#94a3b8;font-size:12px">—</span>';
             const bg   = p >= 85 ? '#dcfce7' : p >= 70 ? '#fef3c7' : '#f1f5f9';
             const fg   = p >= 85 ? '#16a34a' : p >= 70 ? '#b45309' : '#64748b';
             const ring = p >= 85 ? '#86efac' : p >= 70 ? '#fcd34d' : '#cbd5e1';
-            return \`<span style="display:inline-block;padding:2px 9px;border-radius:999px;background:\${bg};color:\${fg};border:1px solid \${ring};font-weight:700;font-size:12px">\${p}%</span>\`;
+            return '<span style="display:inline-block;padding:2px 9px;border-radius:999px;background:' + bg + ';color:' + fg + ';border:1px solid ' + ring + ';font-weight:700;font-size:12px">' + p + '%</span>';
           }
           function vStep(sd, n) {
             if (sd === null || sd === undefined) return '<span style="color:#c4c4c4">—</span>';
@@ -5237,6 +5245,7 @@ async function loadBrain() {
               <div class="table-wrap"><table class="perf-table">
                 <thead><tr>
                   <th>Variant</th><th>Enabled</th><th>Contacts</th><th>Replied Once</th>\${stepThs}<th>Booking Rate</th>
+                  <th style="white-space:nowrap">Opt-Out Rate</th>
                   <th style="white-space:nowrap">P(Best)</th>
                 </tr></thead>
                 <tbody>\${vData.variants.map(v => {
@@ -5253,6 +5262,7 @@ async function loadBrain() {
                     <td>\${vPct(v.repliedOncePct)}</td>
                     \${stepCells}
                     <td>\${vPct(v.bookingRatePct)}</td>
+                    <td>\${vOptOutPill(v.optOutRatePct, v.optedOutRaw)}</td>
                     <td>\${vPBestPill(v.pBest)}</td>
                   </tr>\`;
                 }).join('')}</tbody>
