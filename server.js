@@ -354,10 +354,15 @@ function isDndFromPayload(payload) {
 // catches any job that picks up between cancellation and commit.
 // Idempotent — safe to call multiple times for the same contact.
 async function applyOptOut(contactId, reason) {
-  await optouts.add(contactId);
+  // Capture the contact's variant at opt-out time so per-variant opt-out
+  // rates can be computed in the admin dashboard. Falls back to null when
+  // the contact isn't in the local cache (e.g. carrier STOP for a contact
+  // that never got fully enrolled) — the optouts module accepts null.
+  const variant = conversations.get(contactId)?.variant || null;
+  await optouts.add(contactId, variant);
   const cancelledSms = followups.cancelContactJobs(contactId);
   const cancelledEmail = followups.cancelEmailJobs(contactId);
-  console.log(`[Optout] ${contactId} blocklisted (${reason}) — cancelled ${cancelledSms} SMS + ${cancelledEmail} email job(s)`);
+  console.log(`[Optout] ${contactId} blocklisted (${reason}, variant=${variant || 'unknown'}) — cancelled ${cancelledSms} SMS + ${cancelledEmail} email job(s)`);
 }
 
 // ─── GHL Inbound Webhook ──────────────────────────────────────────────────────
@@ -2793,7 +2798,7 @@ app.post('/admin/variants/:variant/enabled', requireAdmin, (req, res) => {
   }
 });
 
-app.get('/api/brain/variants', requireAdmin, (req, res) => {
+app.get('/api/brain/variants', requireAdmin, async (req, res) => {
   try {
     const enabledList = prompts.getEnabledVariants();
     const allContacts = conversations.getAll();
@@ -2803,11 +2808,11 @@ app.get('/api/brain/variants', requireAdmin, (req, res) => {
     const days = parseInt(req.query.days, 10) || null;
     const cutoff = days ? Date.now() - days * 86400000 : null;
 
-    const counts = { A: { assigned: 0, repliedOnce: 0, replied4: 0, booked: 0 },
-                     B: { assigned: 0, repliedOnce: 0, replied4: 0, booked: 0 },
-                     C: { assigned: 0, repliedOnce: 0, replied4: 0, booked: 0 },
-                     D: { assigned: 0, repliedOnce: 0, replied4: 0, booked: 0 },
-                     E: { assigned: 0, repliedOnce: 0, replied4: 0, booked: 0 } };
+    const counts = { A: { assigned: 0, repliedOnce: 0, replied4: 0, booked: 0, optedOut: 0 },
+                     B: { assigned: 0, repliedOnce: 0, replied4: 0, booked: 0, optedOut: 0 },
+                     C: { assigned: 0, repliedOnce: 0, replied4: 0, booked: 0, optedOut: 0 },
+                     D: { assigned: 0, repliedOnce: 0, replied4: 0, booked: 0, optedOut: 0 },
+                     E: { assigned: 0, repliedOnce: 0, replied4: 0, booked: 0, optedOut: 0 } };
 
     // Step funnel tracking: collect contacts per variant keyed by their currentStep
     const stepRaw = { A: [], B: [], C: [], D: [], E: [] };
@@ -2821,6 +2826,11 @@ app.get('/api/brain/variants', requireAdmin, (req, res) => {
     // AI's [BOOKED] marker pauses the AI but does NOT count for stats.
     const bookedSet = brain.getBookedContactIds();
 
+    // Opt-out set — contacts that hit STOP keyword, GHL DND flag, or were
+    // manually blocklisted. Counted per-variant to surface which scripts
+    // are burning out the audience the fastest.
+    const optedOutSet = await optouts.getAllSet();
+
     for (const c of Object.values(allContacts)) {
       const cForm = c.leadForm || 'unknown';
       leadFormSet.add(cForm);
@@ -2833,6 +2843,7 @@ app.get('/api/brain/variants', requireAdmin, (req, res) => {
       if (inbound >= 1) vc.repliedOnce++;
       if (inbound >= 4) vc.replied4++;
       if (bookedSet.has(c.contactId)) vc.booked++;
+      if (optedOutSet.has(c.contactId)) vc.optedOut++;
       // Collect step data for funnel breakdown
       const step = typeof c.currentStep === 'number' ? c.currentStep : null;
       if (step !== null && step >= 1 && stepRaw[c.variant]) {
@@ -2994,6 +3005,8 @@ app.get('/api/brain/variants', requireAdmin, (req, res) => {
         replied4Pct:      pct(vc.replied4,    vc.assigned),
         bookingRatePct:   pct(vc.booked,      vc.assigned),
         bookedRaw:        vc.booked,
+        optedOutRaw:      vc.optedOut,
+        optOutRatePct:    pct(vc.optedOut,    vc.assigned),
         pBest:            hasEnoughData ? Math.round((wins[v] / SAMPLES) * 100) : null,
         stepData:         stepDataByVariant[v]
       };
@@ -4034,6 +4047,13 @@ app.listen(PORT, () => {
   Promise.all([bootstrapStateFromGHL(), conversations.whenReady()])
     .then(() => {
       console.log('[Bootstrap] GHL state and conversations ready.');
+
+      // Backfill historical opt-out variants now that the contacts table is
+      // guaranteed to be ready (variant column was added in conversations.js
+      // bootstrap). One-time recovery for opt-outs recorded before the
+      // optouts.variant column existed.
+      optouts.backfillVariants().catch(err =>
+        console.error('[Optouts] Backfill failed:', err.message));
 
       // Variant E VSL URL check: warn if E is enabled but the URL has been
       // cleared to empty. The default ships as a placeholder; replace it with
@@ -5921,6 +5941,18 @@ async function loadVariantStats() {
       return \`<span class="rate-pill \${cls}">\${rate}%</span>\`;
     }
 
+    // Opt-out rate uses INVERTED color logic: low rate is good (green),
+    // high rate is bad (red). Thresholds picked to roughly mirror normal
+    // SMS-channel opt-out benchmarks: <5% healthy, 5-15% concerning, >15% bad.
+    function optOutPill(rate, raw) {
+      if (rate === null || rate === undefined) return '<span style="color:#555">—</span>';
+      const bg   = rate >= 15 ? '#fee2e2' : rate >= 5 ? '#fef3c7' : '#dcfce7';
+      const fg   = rate >= 15 ? '#b91c1c' : rate >= 5 ? '#b45309' : '#16a34a';
+      const ring = rate >= 15 ? '#fca5a5' : rate >= 5 ? '#fcd34d' : '#86efac';
+      const rawTxt = (raw !== undefined && raw !== null) ? \` <span style="font-weight:500;opacity:.75">(\${raw})</span>\` : '';
+      return \`<span style="display:inline-block;padding:2px 9px;border-radius:999px;background:\${bg};color:\${fg};border:1px solid \${ring};font-weight:700;font-size:12px">\${rate}%\${rawTxt}</span>\`;
+    }
+
     function pBestPill(p) {
       if (p === null || p === undefined) return '<span style="color:#94a3b8;font-size:12px">—</span>';
       const bg   = p >= 85 ? '#dcfce7' : p >= 70 ? '#fef3c7' : '#f1f5f9';
@@ -5936,6 +5968,7 @@ async function loadVariantStats() {
       <td>\${ratePill(v.repliedOncePct)}</td>
       <td>\${ratePill(v.replied4Pct)}</td>
       <td>\${ratePill(v.bookingRatePct)}</td>
+      <td>\${optOutPill(v.optOutRatePct, v.optedOutRaw)}</td>
       <td>\${pBestPill(v.pBest)}</td>
     </tr>\`).join('');
 
@@ -5960,6 +5993,7 @@ async function loadVariantStats() {
     el.innerHTML = \`\${chips}<table class="variant-stats-table">
       <thead><tr>
         <th>Variant</th><th>Enabled</th><th>Contacts</th><th>Replied Once</th><th>4+ Replies</th><th>Booking Rate</th>
+        <th style="white-space:nowrap">Opt-Out Rate</th>
         <th style="white-space:nowrap">P(Best) <span style="font-weight:400;font-size:10px;color:#94a3b8;letter-spacing:0">&#9432;</span></th>
       </tr></thead>
       <tbody>\${rows}</tbody>
