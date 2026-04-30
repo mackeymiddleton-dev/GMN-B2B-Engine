@@ -536,6 +536,30 @@ async function notifySid(text) {
   }
 }
 
+// ─── Variant E Prompt Builder ──────────────────────────────────────────────────
+// Steps 0-9: shared + opening + all four branches (routing turn needs exact copy).
+// Steps 10+: shared + active branch only.
+function buildVariantESystemPrompt(currentStep) {
+  const shared  = prompts.get('conversationPrompt.E.shared')  || '';
+  const opening = prompts.get('conversationPrompt.E.opening') || '';
+  const branchA = prompts.get('conversationPrompt.E.branchA') || '';
+  const branchB = prompts.get('conversationPrompt.E.branchB') || '';
+  const branchC = prompts.get('conversationPrompt.E.branchC') || '';
+  const branchD = prompts.get('conversationPrompt.E.branchD') || '';
+
+  if (currentStep < 10) {
+    return [shared, opening, branchA, branchB, branchC, branchD].filter(Boolean).join('\n\n');
+  } else if (currentStep <= 29) {
+    return [shared, branchA].filter(Boolean).join('\n\n');
+  } else if (currentStep <= 49) {
+    return [shared, branchB].filter(Boolean).join('\n\n');
+  } else if (currentStep <= 69) {
+    return [shared, branchC].filter(Boolean).join('\n\n');
+  } else {
+    return [shared, branchD].filter(Boolean).join('\n\n');
+  }
+}
+
 async function generateAndSendOpener(contactId) {
   if (_openerInProgress.has(contactId)) {
     console.log(`[Opener] Skipping ${contactId} — opener generation already in progress`);
@@ -576,8 +600,13 @@ async function generateAndSendOpener(contactId) {
     // Build system prompt — same shape as handleInbound but with no live
     // research/scan data yet (none exists at enrollment time) and CURRENT STEP=0.
     const variant = contact.variant || null;
-    const variantPromptKey = variant ? `conversationPrompt.${variant}` : 'conversationPrompt';
-    let systemContent = prompts.get(variantPromptKey) || prompts.get('conversationPrompt');
+    let systemContent;
+    if (variant === 'E') {
+      systemContent = buildVariantESystemPrompt(0);
+    } else {
+      const variantPromptKey = variant ? `conversationPrompt.${variant}` : 'conversationPrompt';
+      systemContent = prompts.get(variantPromptKey) || prompts.get('conversationPrompt');
+    }
     if (contact.firstName) systemContent += `\n\nPROSPECT FIRST NAME: ${contact.firstName}`;
     if (contact.city)      systemContent += `\n\nPROSPECT CITY: ${contact.city}`;
     systemContent += `\n\nCURRENT STEP: 0 (continue from here)`;
@@ -603,8 +632,11 @@ async function generateAndSendOpener(contactId) {
     }
 
     // Strip any hidden markers before sending — the prospect must never see them.
-    const stepMatch = openerText.match(/\[STEP:(\d+)\]/i);
-    const detectedStep = stepMatch ? parseInt(stepMatch[1], 10) : null;
+    // Use the LAST [STEP:N] marker in case Claude emits multiple step markers
+    // in one turn (e.g. Variant E Steps 2+3 sent together).
+    const allOpenerStepMatches = [...openerText.matchAll(/\[STEP:(\d+)\]/gi)];
+    const detectedStep = allOpenerStepMatches.length > 0
+      ? parseInt(allOpenerStepMatches[allOpenerStepMatches.length - 1][1], 10) : null;
     openerText = openerText
       .replace(/\[STEP:\d+\]\s*/gi, '')
       .replace(/\[PRACTICE_DETECTED:[^\]]+\]\s*/gi, '')
@@ -1229,10 +1261,17 @@ async function generateAndSendAiReply(contactId, resolvedConvId, opts = {}) {
   }
 
   // Build system prompt with live data + winning patterns. Pick variant-specific
-  // prompt (A/B/C); fall back to the base prompt if no variant is assigned.
+  // prompt (A/B/C/D/E); fall back to the base prompt if no variant is assigned.
+  // Variant E uses a modular composition: shared rules + branch script selected
+  // by currentStep. All other variants use a single flat prompt key.
   const contactVariant = fresh?.variant || null;
-  const variantPromptKey = contactVariant ? `conversationPrompt.${contactVariant}` : 'conversationPrompt';
-  let systemContent = prompts.get(variantPromptKey) || prompts.get('conversationPrompt');
+  let systemContent;
+  if (contactVariant === 'E') {
+    systemContent = buildVariantESystemPrompt(fresh?.currentStep ?? 0);
+  } else {
+    const variantPromptKey = contactVariant ? `conversationPrompt.${contactVariant}` : 'conversationPrompt';
+    systemContent = prompts.get(variantPromptKey) || prompts.get('conversationPrompt');
+  }
 
   if (resolvedFirstName || fresh?.firstName) {
     systemContent += `\n\nPROSPECT FIRST NAME: ${resolvedFirstName || fresh?.firstName}`;
@@ -1315,8 +1354,9 @@ async function generateAndSendAiReply(contactId, resolvedConvId, opts = {}) {
     const isDuplicate = !!replyClean && !!lastClean && replyClean === lastClean;
 
     let isHardCapViolation = false;
-    const _stepPre = reply.match(/\[STEP:(\d+)\]/i);
-    const _newStepPre = _stepPre ? parseInt(_stepPre[1], 10) : null;
+    const _stepPreMatches = [...reply.matchAll(/\[STEP:(\d+)\]/gi)];
+    const _newStepPre = _stepPreMatches.length > 0
+      ? parseInt(_stepPreMatches[_stepPreMatches.length - 1][1], 10) : null;
     if (_newStepPre !== null && recentOutbounds.length === 2 &&
         recentOutbounds[0].step === _newStepPre &&
         recentOutbounds[1].step === _newStepPre) {
@@ -1331,7 +1371,10 @@ async function generateAndSendAiReply(contactId, resolvedConvId, opts = {}) {
     // (short, specific follow-up question NOT restating the scripted text) while blocking
     // the verbatim re-ask pattern.
     let isSameStepReask = false;
-    if (!isHardCapViolation && _newStepPre !== null && recentOutbounds.length > 0) {
+    // Variant E step 3 is the routing turn: one legitimate [STEP:3] clarifying question
+    // is allowed after an ambiguous menu reply. The hard-cap (3-in-a-row) still applies.
+    const isVariantEStep3Clarifier = contactVariant === 'E' && _newStepPre === 3;
+    if (!isHardCapViolation && !isVariantEStep3Clarifier && _newStepPre !== null && recentOutbounds.length > 0) {
       const _lastStep = recentOutbounds[recentOutbounds.length - 1].step;
       if (_lastStep !== null && _lastStep !== undefined && _lastStep === _newStepPre) {
         isSameStepReask = true;
@@ -1371,9 +1414,13 @@ async function generateAndSendAiReply(contactId, resolvedConvId, opts = {}) {
 
   // ── Extract hidden markers ──
 
-  // [STEP:N] — track current step
-  const stepMatch = reply.match(/\[STEP:(\d+)\]/i);
-  const detectedStep = stepMatch ? parseInt(stepMatch[1], 10) : null;
+  // [STEP:N] — track current step.
+  // Use the LAST marker in case Claude emits multiple step markers in one turn
+  // (e.g. Variant E Steps 2+3 sent together). Using the last marker ensures
+  // currentStep lands on the final state of the turn (e.g. step 3, not step 2).
+  const allStepMatches = [...reply.matchAll(/\[STEP:(\d+)\]/gi)];
+  const detectedStep = allStepMatches.length > 0
+    ? parseInt(allStepMatches[allStepMatches.length - 1][1], 10) : null;
   reply = reply.replace(/\[STEP:\d+\]\s*/gi, '').trim();
 
   // [PRACTICE_DETECTED:name|street|city] — fast lookup → address confirmation → research
@@ -1401,24 +1448,32 @@ async function generateAndSendAiReply(contactId, resolvedConvId, opts = {}) {
         if (topResult) {
           const confirmName = topResult.name || practiceName;
           const confirmAddress = topResult.formatted_address || topResult.vicinity || '';
-          conversations.update(contactId, {
-            confirmationPending: { placeId: topResult.place_id, name: confirmName, address: confirmAddress, city: practiceCity }
-          });
-          confirmationMsg = `Found ${confirmName} at ${confirmAddress} — is that the right one?`;
-          console.log(`[AiGen] Address confirmation queued for ${contactId}: ${confirmName}`);
+
+          if (contactVariant === 'E') {
+            // Variant E: silent scan — no confirmation SMS, Data Payload delivers results.
+            conversations.update(contactId, { practiceName: confirmName, practiceCity });
+            console.log(`[AiGen] Variant E: silent scan for ${contactId}: ${confirmName}`);
+            startResearchAndScan(contactId, confirmName, practiceStreet, practiceCity, topResult.place_id);
+          } else {
+            conversations.update(contactId, {
+              confirmationPending: { placeId: topResult.place_id, name: confirmName, address: confirmAddress, city: practiceCity }
+            });
+            confirmationMsg = `Found ${confirmName} at ${confirmAddress} — is that the right one?`;
+            console.log(`[AiGen] Address confirmation queued for ${contactId}: ${confirmName}`);
+          }
         } else {
           console.log(`[AiGen] No listing found for "${searchQuery}" — skipping confirmation`);
           startResearchAndScan(contactId, practiceName, practiceStreet, practiceCity, null);
-          scheduleAiResponseAfterResearch(contactId, resolvedConvId);
+          if (contactVariant !== 'E') scheduleAiResponseAfterResearch(contactId, resolvedConvId);
         }
       } catch (err) {
         console.error('[AiGen] Fast lookup error:', err.message);
         startResearchAndScan(contactId, practiceName, practiceStreet, practiceCity, null);
-        scheduleAiResponseAfterResearch(contactId, resolvedConvId);
+        if (contactVariant !== 'E') scheduleAiResponseAfterResearch(contactId, resolvedConvId);
       }
     } else {
       startResearchAndScan(contactId, practiceName, practiceStreet, practiceCity, null);
-      scheduleAiResponseAfterResearch(contactId, resolvedConvId);
+      if (contactVariant !== 'E') scheduleAiResponseAfterResearch(contactId, resolvedConvId);
     }
   }
 
@@ -1540,6 +1595,19 @@ async function generateAndSendAiReply(contactId, resolvedConvId, opts = {}) {
   // known step so brain/followups never receive null when we have prior state.
   const persistStep = detectedStep ?? fresh?.currentStep ?? null;
 
+  // Variant E: inject VSL URL into [Link] placeholder.
+  // Resolved from VARIANT_E_VSL_URL env var then conversationPrompt.E.vslUrl prompt key.
+  // Fail-closed: no send if neither is configured (prevents broken message).
+  if (contactVariant === 'E' && reply.includes('[Link]')) {
+    const vslUrl = process.env.VARIANT_E_VSL_URL || prompts.get('conversationPrompt.E.vslUrl') || '';
+    if (vslUrl) {
+      reply = reply.replace(/\[Link\]/gi, vslUrl);
+    } else {
+      console.error(`[AiGen] Variant E video step blocked for ${contactId}: no VSL URL configured`);
+      reply = '';
+    }
+  }
+
   // Send reply via GHL and persist
   if (reply) {
     await ghl.sendMessage(contactId, reply);
@@ -1551,8 +1619,38 @@ async function generateAndSendAiReply(contactId, resolvedConvId, opts = {}) {
       variant: contactVariant
     });
     brain.recordOutbound(contactId, reply, persistStep, { variant: contactVariant });
-    followups.scheduleSilenceCheck(contactId, persistStep, reply);
+    // Variant E video link steps (12/32/52/72): suppress the normal 5-minute
+    // silence nudge. The only planned follow-up for prospects who haven't booked
+    // after receiving the video is the Data Payload (scheduled below). Scheduling
+    // both would send two unsolicited follow-ups, which violates the spec.
+    const isVariantEVideoStep = contactVariant === 'E' && [12, 32, 52, 72].includes(detectedStep);
+    if (!isVariantEVideoStep) {
+      followups.scheduleSilenceCheck(contactId, persistStep, reply);
+    }
     console.log(`[AiGen] Sent to ${contactId} (step ${persistStep}, variant ${contactVariant || 'none'}): "${reply.slice(0, 80)}"`);
+
+    // Variant E: schedule Data Payload follow-up 15–20 min after video link steps.
+    // Deduplicate: skip if a pending or sent data-payload job already exists for
+    // this contact (e.g. hesitation handler fires step 12 while a job is pending).
+    if (contactVariant === 'E' && [12, 32, 52, 72].includes(detectedStep)) {
+      const existingDataPayload = followups.getAllJobs().find(
+        j => j.contactId === contactId && j.type === 'data-payload' &&
+             (j.status === 'pending' || j.status === 'sent')
+      );
+      if (!existingDataPayload) {
+        const delayMs = (15 + Math.random() * 5) * 60 * 1000;
+        followups.scheduleJob({
+          contactId,
+          type: 'data-payload',
+          position: 1,
+          sendAt: Date.now() + delayMs,
+          context: { variant: 'E', videoStep: detectedStep, retries: 0 }
+        });
+        console.log(`[DataPayload] Scheduled for ${contactId} in ~${Math.round(delayMs / 60000)} min (after step ${detectedStep})`);
+      } else {
+        console.log(`[DataPayload] Skipping schedule for ${contactId} — job already exists (${existingDataPayload.status})`);
+      }
+    }
   }
 
   // Send address confirmation (if queued from PRACTICE_DETECTED)
@@ -2596,9 +2694,12 @@ app.post('/api/admin/backfill-variants', requireAdmin, (req, res) => {
   const unassigned = Object.entries(all).filter(([, c]) => !c.variant);
   if (unassigned.length === 0) return res.json({ ok: true, assigned: 0, message: 'All contacts already have variants' });
 
-  const variants = ['A', 'B', 'C', 'D'];
+  // Respect currently-enabled variants so backfill honours the same pool
+  // as new-contact assignment (pickVariant uses getEnabledVariants() too).
+  const enabledV = prompts.getEnabledVariants();
+  const backfillVariants = enabledV.length > 0 ? enabledV : ['A', 'B', 'C', 'D', 'E'];
   // Count current assignments to continue the round-robin fairly
-  const counts = { A: 0, B: 0, C: 0, D: 0 };
+  const counts = Object.fromEntries(backfillVariants.map(v => [v, 0]));
   for (const c of Object.values(all)) {
     if (c.variant && counts[c.variant] !== undefined) counts[c.variant]++;
   }
@@ -2606,13 +2707,14 @@ app.post('/api/admin/backfill-variants', requireAdmin, (req, res) => {
   let assigned = 0;
   for (const [contactId] of unassigned) {
     // Always pick the variant with the fewest contacts
-    const next = variants.slice().sort((a, b) => counts[a] - counts[b])[0];
+    const next = backfillVariants.slice().sort((a, b) => counts[a] - counts[b])[0];
     conversations.update(contactId, { variant: next });
     counts[next]++;
     assigned++;
   }
 
-  console.log(`[Variants] Backfilled ${assigned} contacts. Distribution: A=${counts.A} B=${counts.B} C=${counts.C} D=${counts.D}`);
+  const dist = backfillVariants.map(v => `${v}=${counts[v]}`).join(' ');
+  console.log(`[Variants] Backfilled ${assigned} contacts. Distribution: ${dist}`);
   res.json({ ok: true, assigned, distribution: counts });
 });
 
@@ -2664,7 +2766,7 @@ app.post('/api/admin/reset-variants', requireAdmin, async (req, res) => {
 
 app.post('/admin/variants/:variant/enabled', requireAdmin, (req, res) => {
   const { variant } = req.params;
-  if (!['A', 'B', 'C', 'D'].includes(variant)) return res.status(400).json({ error: 'Invalid variant. Must be A, B, C, or D.' });
+  if (!['A', 'B', 'C', 'D', 'E'].includes(variant)) return res.status(400).json({ error: 'Invalid variant. Must be A, B, C, D, or E.' });
   const { enabled } = req.body;
   if (typeof enabled !== 'boolean') return res.status(400).json({ error: 'enabled field must be a boolean.' });
   try {
@@ -2691,10 +2793,11 @@ app.get('/api/brain/variants', requireAdmin, (req, res) => {
     const counts = { A: { assigned: 0, repliedOnce: 0, replied4: 0, booked: 0 },
                      B: { assigned: 0, repliedOnce: 0, replied4: 0, booked: 0 },
                      C: { assigned: 0, repliedOnce: 0, replied4: 0, booked: 0 },
-                     D: { assigned: 0, repliedOnce: 0, replied4: 0, booked: 0 } };
+                     D: { assigned: 0, repliedOnce: 0, replied4: 0, booked: 0 },
+                     E: { assigned: 0, repliedOnce: 0, replied4: 0, booked: 0 } };
 
     // Step funnel tracking: collect contacts per variant keyed by their currentStep
-    const stepRaw = { A: [], B: [], C: [], D: [] };
+    const stepRaw = { A: [], B: [], C: [], D: [], E: [] };
 
     // Track which lead forms are present in the data so the dashboard can
     // render filter chips dynamically (no hard-coded form list).
@@ -2759,11 +2862,37 @@ app.get('/api/brain/variants', requireAdmin, (req, res) => {
       C: prompts.get('conversationPrompt.C') ? 'conversationPrompt.C' : 'conversationPrompt',
       D: prompts.get('conversationPrompt.D') ? 'conversationPrompt.D' : 'conversationPrompt'
     };
+
+    // Variant E uses modular sub-prompts. Concatenate all parts for step
+    // description extraction so the funnel can label steps 1-3 (opening)
+    // and branch steps (10-89 map onto step 7+ in the clamped funnel).
+    function _extractStepDescsFromText(text) {
+      const desc = {};
+      const re = /^STEP\s+(\d+)(.*?)$/gim;
+      let m;
+      while ((m = re.exec(text)) !== null) {
+        const n = parseInt(m[1], 10);
+        if (desc[n]) continue;
+        let label = m[2].trim().replace(/^[\s\u2014\-:]+/, '').replace(/:+$/, '').trim();
+        if (label.startsWith('(') && label.includes(')')) {
+          label = label.slice(1, label.indexOf(')')).trim();
+        }
+        if (label.length > 80) label = label.slice(0, 77) + '...';
+        desc[n] = label;
+      }
+      return desc;
+    }
+
+    const variantECombinedText = ['conversationPrompt.E.opening', 'conversationPrompt.E.branchA',
+      'conversationPrompt.E.branchB', 'conversationPrompt.E.branchC', 'conversationPrompt.E.branchD']
+      .map(k => prompts.get(k) || '').join('\n\n');
+
     const stepDescs = {
       A: _extractStepDescs(variantPromptKeys.A),
       B: _extractStepDescs(variantPromptKeys.B),
       C: _extractStepDescs(variantPromptKeys.C),
-      D: _extractStepDescs(variantPromptKeys.D)
+      D: _extractStepDescs(variantPromptKeys.D),
+      E: _extractStepDescsFromText(variantECombinedText)
     };
 
     // Column count: max prompt-defined step across all variants, clamped to 7.
@@ -2799,7 +2928,8 @@ app.get('/api/brain/variants', requireAdmin, (req, res) => {
       A: _buildStepData('A', stepRaw.A, counts.A.assigned),
       B: _buildStepData('B', stepRaw.B, counts.B.assigned),
       C: _buildStepData('C', stepRaw.C, counts.C.assigned),
-      D: _buildStepData('D', stepRaw.D, counts.D.assigned)
+      D: _buildStepData('D', stepRaw.D, counts.D.assigned),
+      E: _buildStepData('E', stepRaw.E, counts.E.assigned)
     };
 
     const pct = (n, d) => d > 0 ? Math.round((n / d) * 100) : null;
@@ -2822,10 +2952,11 @@ app.get('/api/brain/variants', requireAdmin, (req, res) => {
       return x / (x + y);
     }
 
+    const ALL_VARIANTS = ['A', 'B', 'C', 'D', 'E'];
     const MIN_CONTACTS_FOR_PBEST = 3; // suppress P(Best) when sample is too small to mean anything
     const SAMPLES = 50000;
-    const activeVariants = ['A', 'B', 'C', 'D'].filter(v => counts[v].assigned >= MIN_CONTACTS_FOR_PBEST);
-    const wins = { A: 0, B: 0, C: 0, D: 0 };
+    const activeVariants = ALL_VARIANTS.filter(v => counts[v].assigned >= MIN_CONTACTS_FOR_PBEST);
+    const wins = { A: 0, B: 0, C: 0, D: 0, E: 0 };
 
     if (activeVariants.length >= 2) {
       for (let i = 0; i < SAMPLES; i++) {
@@ -2839,7 +2970,7 @@ app.get('/api/brain/variants', requireAdmin, (req, res) => {
       }
     }
 
-    const variants = ['A', 'B', 'C', 'D'].map(v => {
+    const variants = ALL_VARIANTS.map(v => {
       const vc = counts[v];
       const hasEnoughData = vc.assigned >= MIN_CONTACTS_FOR_PBEST && activeVariants.length >= 2;
       return {
@@ -2921,6 +3052,9 @@ function _buildPlaygroundSystemPrompt(session) {
   let systemContent;
   if (session.variant === 'CUSTOM') {
     systemContent = String(session.customPrompt || '').trim();
+  } else if (session.variant === 'E') {
+    // Variant E uses the same modular composition as the live pipeline.
+    systemContent = buildVariantESystemPrompt(session.currentStep || 0);
   } else {
     const variantPromptKey = `conversationPrompt.${session.variant}`;
     systemContent = prompts.get(variantPromptKey) || prompts.get('conversationPrompt');
@@ -3210,7 +3344,7 @@ function _normalizePlaygroundVariant(variant, customPrompt) {
     return { variant: 'CUSTOM', customPrompt: trimmedCustom };
   }
   if (v === 'CUSTOM') return { error: 'customPrompt is required when variant is CUSTOM' };
-  if (!['A', 'B', 'C', 'D'].includes(v)) return { error: 'variant must be A, B, C, D, or CUSTOM' };
+  if (!['A', 'B', 'C', 'D', 'E'].includes(v)) return { error: 'variant must be A, B, C, D, E, or CUSTOM' };
   return { variant: v };
 }
 
@@ -3887,6 +4021,17 @@ app.listen(PORT, () => {
   Promise.all([bootstrapStateFromGHL(), conversations.whenReady()])
     .then(() => {
       console.log('[Bootstrap] GHL state and conversations ready.');
+
+      // Variant E VSL URL check: warn if E is enabled but the URL has been
+      // cleared to empty. The default ships as a placeholder; replace it with
+      // the real URL via VARIANT_E_VSL_URL (env) or conversationPrompt.E.vslUrl.
+      const isEEnabled = prompts.getEnabledVariants().includes('E');
+      const vslUrlConfigured = !!(process.env.VARIANT_E_VSL_URL || prompts.get('conversationPrompt.E.vslUrl'));
+      if (isEEnabled && !vslUrlConfigured) {
+        console.error('[VariantE] WARNING: Variant E is enabled but conversationPrompt.E.vslUrl is empty.');
+        console.error('[VariantE]   → Set VARIANT_E_VSL_URL env var or update conversationPrompt.E.vslUrl');
+        console.error('[VariantE]     in the admin prompt editor with the real video URL before going live.');
+      }
     })
     .catch(err => console.error('[Bootstrap] Error:', err.message));
 });
