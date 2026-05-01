@@ -36,3 +36,9 @@ id = "c6HAgfdQfeJzcCz6nAfKv"
 uri = "file://attached_assets/variant_draft_truth_bomb_holes.txt"
 type = "text"
 title = "Absurd Truth Bomb + Hole Stacking + Hidden Number — Production-Ready Draft"
+
+[[outputs]]
+id = "HgXiB1dIthccblAQJe5pj"
+uri = "file://data/winning-patterns.json"
+type = "unspecified"
+title = "winning-patterns.json — Brain Analysis"
