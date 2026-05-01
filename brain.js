@@ -80,6 +80,27 @@ async function initFromDb() {
     } else {
       _messagesCache = rows.map(_rowToMsg);
       console.log(`[Brain] DB loaded: ${_messagesCache.length} messages`);
+      // Immediately backfill message_type (catches emails stored before the
+      // field was written). This runs on every startup so no manual migration
+      // is needed — if nothing changed, backfillMessages() returns changed=false.
+      const { messages: backfilled, changed: bfChanged, emailsBackfilled } = backfillMessages(_messagesCache);
+      if (bfChanged) {
+        for (let i = 0; i < backfilled.length; i++) {
+          const orig = _messagesCache[i];
+          const updated = backfilled[i];
+          if (orig !== updated) {
+            _messagesCache[i] = updated;
+            const updates = {};
+            if (orig.message_type !== updated.message_type) updates.message_type = updated.message_type;
+            if (orig.position !== updated.position) updates.position = updated.position;
+            if (orig.had_enrichment_data !== updated.had_enrichment_data) updates.had_enrichment_data = updated.had_enrichment_data;
+            if (orig.length_chars !== updated.length_chars) updates.length_chars = updated.length_chars;
+            if (orig.messageClass !== updated.messageClass) updates.messageClass = updated.messageClass;
+            if (Object.keys(updates).length > 0) _dbUpdateMessage(updated.id, updates);
+          }
+        }
+        console.log(`[Brain] Startup backfill: tagged ${emailsBackfilled} messages as email`);
+      }
     }
   } catch (err) {
     console.error('[Brain] DB init error:', err.message);
@@ -432,11 +453,12 @@ function recordReply(contactId) {
   if (lastOutboundIdx === -1) return;
 
   const msg = _messagesCache[lastOutboundIdx];
-  const withinWindow = now - msg.timestamp <= REPLY_WINDOW_MS;
-  const updates = { repliedWithin48h: withinWindow, repliedAt: now };
+  // Always credit the reply — no time gate. Attribution is purely structural:
+  // whatever was the last outbound message gets credit when any reply arrives.
+  const updates = { repliedWithin48h: true, repliedAt: now };
 
   const channel = msg.message_type || 'scripted-sms';
-  console.log(`[Brain] Crediting reply to ${channel} message (id=${msg.id}) for contact ${contactId} — within48h=${withinWindow}`);
+  console.log(`[Brain] Crediting reply to ${channel} message (id=${msg.id}) for contact ${contactId}`);
 
   _messagesCache[lastOutboundIdx] = { ...msg, ...updates };
   _dbUpdateMessage(msg.id, updates);
@@ -463,14 +485,24 @@ function recordBooking(contactId) {
 
 function backfillMessages(messages) {
   let anyChanged = false;
+  let emailsBackfilled = 0;
   const result = messages.map(m => {
     if (m.direction !== 'outbound') return m;
     const updates = {};
-    if (m.message_type === undefined) {
-      // Infer channel: records without a step came from follow-up code paths
-      updates.message_type = (m.step !== null && m.step !== undefined)
-        ? 'scripted-sms'
-        : 'followup-sms';
+    if (m.message_type == null) {
+      // Detect emails by body prefix first — they have no `step` and were
+      // recorded before message_type was written. Must check before the
+      // SMS heuristic below or emails get mislabelled as followup-sms.
+      if ((m.body || '').startsWith('[Email]')) {
+        updates.message_type = 'email';
+        emailsBackfilled++;
+      } else {
+        // Infer SMS channel: records with a step came from scripted flow,
+        // those without came from follow-up code paths.
+        updates.message_type = (m.step !== null && m.step !== undefined)
+          ? 'scripted-sms'
+          : 'followup-sms';
+      }
     }
     if (m.position          === undefined) updates.position          = null;
     if (m.had_enrichment_data === undefined) updates.had_enrichment_data = null;
@@ -494,7 +526,7 @@ function backfillMessages(messages) {
     }
     return m;
   });
-  return { messages: result, changed: anyChanged };
+  return { messages: result, changed: anyChanged, emailsBackfilled };
 }
 
 // ─── Analysis ────────────────────────────────────────────────────────────────
@@ -526,7 +558,7 @@ function runAnalysis() {
   }
 
   // Backfill any missing metadata fields on old records
-  const { messages: backfilled, changed } = backfillMessages(_messagesCache);
+  const { messages: backfilled, changed, emailsBackfilled } = backfillMessages(_messagesCache);
   if (changed) {
     for (let i = 0; i < backfilled.length; i++) {
       const orig = _messagesCache[i];
@@ -542,7 +574,7 @@ function runAnalysis() {
         if (Object.keys(updates).length > 0) _dbUpdateMessage(updated.id, updates);
       }
     }
-    console.log('[Brain] Backfilled metadata fields on existing messages');
+    console.log(`[Brain] Backfilled metadata fields on existing messages (${emailsBackfilled} tagged email)`);
   }
 
   let messages = _messagesCache;
