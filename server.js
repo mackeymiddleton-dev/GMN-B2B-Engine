@@ -3033,7 +3033,8 @@ app.get('/api/brain/variants', requireAdmin, async (req, res) => {
         optedOutRaw:      vc.optedOut,
         optOutRatePct:    pct(vc.optedOut,    vc.assigned),
         pBest:            hasEnoughData ? Math.round((wins[v] / SAMPLES) * 100) : null,
-        stepData:         stepDataByVariant[v]
+        stepData:         stepDataByVariant[v],
+        notes:            prompts.get(`conversationPrompt.${v}.notes`) || ''
       };
     });
 
@@ -4289,6 +4290,14 @@ tr:hover td{background:rgba(236,253,245,.45)}
 /* ── Table scroll wrapper ── */
 .table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
 
+/* ── Variant notes (main dashboard) ── */
+.vnotes-toggle{background:none;border:none;cursor:pointer;font-size:12px;color:#94a3b8;font-weight:600;padding:0;display:inline-flex;align-items:center;gap:5px;font-family:inherit}
+.vnotes-toggle:hover{color:#475569}
+.vnotes-body textarea{width:100%;box-sizing:border-box;font-size:12.5px;color:#374151;border:1px solid #d1d5db;border-radius:8px;padding:10px 12px;resize:vertical;font-family:inherit;background:#fff;min-height:72px}
+.vnotes-save{padding:5px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:1px solid rgba(203,213,225,.9);background:#fff;color:#374151;font-family:inherit}
+.vnotes-save:hover{border-color:#94a3b8;color:#0f172a}
+.vnotes-status{font-size:12px;font-weight:600;color:#10b981}
+
 /* ── Action buttons / inputs (used inline in panels) ── */
 .action-btn{display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;padding:9px 16px;border-radius:12px;border:1px solid rgba(203,213,225,.9);background:#fff;color:#334155;cursor:pointer;transition:all .15s;box-shadow:0 1px 2px rgba(15,23,42,.04)}
 .action-btn:hover{border-color:#94a3b8;color:#0f172a;box-shadow:0 4px 10px rgba(15,23,42,.06)}
@@ -5311,6 +5320,24 @@ async function loadBrain() {
                 &nbsp;&nbsp;<span style="color:#94a3b8">— = fewer than 3 contacts.</span>
                 &nbsp;&nbsp;\${currentLeadForm ? 'Filtered to lead form: <strong>' + escHtml(currentLeadForm) + '</strong>.' : ''} Edit scripts at <a href="/admin/prompts?key=\${ADMIN_KEY}" style="color:#0ea56f">Prompt Editor</a>.
               </div>
+              <div style="margin-top:14px;border-top:1px solid rgba(203,213,225,.4);padding-top:12px">
+                <div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Variant Notes</div>
+                \${vData.variants.filter(v => v.variant !== 'E').map(v => \`
+                  <div style="margin-bottom:4px">
+                    <button class="vnotes-toggle" onclick="toggleVNotes('\${v.variant}')" id="vnbtn-\${v.variant}">
+                      <svg width="12" height="12" viewBox="0 0 20 20" fill="currentColor" id="vnarrow-\${v.variant}" style="transform:rotate(-90deg);transition:transform .15s"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>
+                      Variant \${v.variant}\${v.notes ? '<span style="color:#10b981;margin-left:3px;font-size:10px">&#9679;</span>' : ''}
+                    </button>
+                    <div class="vnotes-body" id="vnbody-\${v.variant}" style="display:none;margin-top:6px;padding-left:18px">
+                      <textarea id="vnta-\${v.variant}" rows="3" placeholder="Notes about Variant \${v.variant}..." spellcheck="true">\${escHtml(v.notes)}</textarea>
+                      <div style="margin-top:6px;display:flex;align-items:center;gap:10px">
+                        <button class="vnotes-save" onclick="saveVariantNotes('\${v.variant}')">Save notes</button>
+                        <span class="vnotes-status" id="vnstatus-\${v.variant}"></span>
+                      </div>
+                    </div>
+                  </div>
+                \`).join('')}
+              </div>
             </div>\`;
         }
       }
@@ -5323,6 +5350,35 @@ async function loadBrain() {
     \`;
   } catch (err) {
     el.innerHTML = '<div class="empty">Failed to load: ' + escHtml(err.message) + '</div>';
+  }
+}
+
+function toggleVNotes(v) {
+  var body = document.getElementById('vnbody-' + v);
+  var arrow = document.getElementById('vnarrow-' + v);
+  if (!body) return;
+  var isOpen = body.style.display !== 'none';
+  body.style.display = isOpen ? 'none' : 'block';
+  if (arrow) arrow.style.transform = isOpen ? 'rotate(-90deg)' : 'rotate(0deg)';
+}
+
+async function saveVariantNotes(v) {
+  var ta = document.getElementById('vnta-' + v);
+  var statusEl = document.getElementById('vnstatus-' + v);
+  if (!ta) return;
+  var name = 'conversationPrompt.' + v + '.notes';
+  if (statusEl) statusEl.textContent = 'Saving\u2026';
+  try {
+    var res = await fetch('/admin/prompts/' + encodeURIComponent(name), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-key': ADMIN_KEY },
+      body: JSON.stringify({ text: ta.value })
+    });
+    var data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    if (statusEl) { statusEl.textContent = '\u2713 Saved'; setTimeout(function() { statusEl.textContent = ''; }, 2500); }
+  } catch(err) {
+    if (statusEl) statusEl.textContent = '\u2717 ' + err.message;
   }
 }
 
