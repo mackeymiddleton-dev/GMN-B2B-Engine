@@ -99,8 +99,8 @@ async function initFromDb() {
             if (Object.keys(updates).length > 0) _dbUpdateMessage(updated.id, updates);
           }
         }
-        console.log(`[Brain] Startup backfill: tagged ${emailsBackfilled} messages as email`);
       }
+      console.log(`[Brain] Startup backfill: tagged ${emailsBackfilled} messages as email`);
     }
   } catch (err) {
     console.error('[Brain] DB init error:', err.message);
@@ -429,8 +429,10 @@ function recordInbound(contactId, body, step) {
 }
 
 /**
- * When an inbound message arrives, mark the most recent outbound for this
- * contact as replied (if within the 48-hour window).
+ * When an inbound message arrives, mark the most recent unreplied outbound
+ * for this contact as replied. Attribution is purely structural — whichever
+ * channel sent the last outbound message gets credit, regardless of how much
+ * time has passed.
  * @param {string} contactId
  */
 function recordReply(contactId) {
