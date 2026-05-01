@@ -5344,8 +5344,10 @@ async function loadBrain() {
         }
         const qi = vData.qualitativeInsights;
         if (qi && qi.text) {
-          const genAtStr = new Date(qi.generatedAt).toLocaleString('en-US', {timeZone:'America/Los_Angeles',month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit',hour12:true});
-          const nextAtStr = new Date(qi.generatedAt + 259200000).toLocaleString('en-US', {timeZone:'America/Los_Angeles',month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit',hour12:true});
+          const _genMs = Number(qi.generatedAt);
+          const _tsOpts = {timeZone:'America/Los_Angeles',month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit',hour12:true};
+          const genAtStr  = Number.isFinite(_genMs) ? new Date(_genMs).toLocaleString('en-US', _tsOpts) : 'Unknown';
+          const nextAtStr = Number.isFinite(_genMs) ? new Date(_genMs + 259200000).toLocaleString('en-US', _tsOpts) : 'Unknown';
           const paras = qi.text.split('\n\n').filter(function(p){return p.trim();}).map(function(p){return '<p style="margin:0 0 14px">' + escHtml(p.trim()) + '</p>';}).join('');
           insightsHtml = '<div style="margin-top:28px;border-top:1px solid rgba(203,213,225,.6);padding-top:20px">'
             + '<div style="font-size:12px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px">AI Analysis</div>'

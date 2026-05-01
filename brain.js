@@ -238,11 +238,11 @@ async function _restorePatternsFromDb() {
         );
         console.log('[Brain] Winning patterns backed up to DB');
       }
-    } else if (!fs.existsSync(PATTERNS_FILE)) {
-      // File is missing (e.g. after redeploy) — restore from DB
+    } else {
+      // DB has data — always sync to file so loadPatterns() stays current
       ensureDir();
       fs.writeFileSync(PATTERNS_FILE, rows[0].data);
-      console.log('[Brain] Winning patterns restored from DB');
+      console.log('[Brain] Winning patterns synced from DB');
     }
   } catch (err) {
     console.error('[Brain] DB patterns restore error:', err.message);
