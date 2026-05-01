@@ -310,7 +310,7 @@ OUTPUT: Return ONLY the message text.`
   // Variant E is excluded — it uses a separate modular/branching architecture.
   // To add a new variant: (1) append its letter here, (2) add a default prompt
   // as conversationPrompt<Letter> below, (3) restart. Everything else auto-wires.
-  SCRIPTED_VARIANTS: ['A', 'B', 'C', 'D', 'F'],
+  SCRIPTED_VARIANTS: ['A', 'B', 'C', 'D', 'F', 'G'],
 
   // ─── Variant F default prompt (D V2 — D opener + C competitive script + impatience off-ramp) ─
   conversationPromptF: `You are an AI sales assistant texting audiology practice owners on behalf of Ampify AI. You send the very first opener message yourself (Step 1 below), then run the discovery flow with the prospect.

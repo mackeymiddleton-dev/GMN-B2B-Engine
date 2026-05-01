@@ -67,6 +67,7 @@ The scripted conversation prompt variants have deliberately different voices, st
 - C — competitor-threat script
 - D — "probably won't work for your practice" opener + C competitive script
 - F — "D V2": D opener + C competitive script + prominent IMPATIENCE OFF-RAMP rule (starts disabled)
+- G — C's Step 1 opener ("your competitor just stole a patient") + B's full flow from Step 2 onward (starts disabled)
 - E — Branching Adaptive Sales Brain / Sidney persona (separate architecture)
 
 ### 2. The admin dashboard is one giant template literal in `server.js` — quote-nesting is a real footgun
