@@ -1033,7 +1033,7 @@ async function runLlmAnalysis(patterns) {
   try {
     const response = await getAI().messages.create({
       model: process.env.ANTHROPIC_MODEL || 'claude-opus-4-5',
-      max_tokens: 400,
+      max_tokens: 600,
       system: systemPrompt,
       messages: [{ role: 'user', content: `Here is the performance data:\n\n${patternSummary}` }]
     });
@@ -1091,6 +1091,11 @@ function getBookedContactIds() {
   return ids;
 }
 
+function getQualitativeInsights() {
+  const p = loadPatterns();
+  return p._qualitativeInsights || null;
+}
+
 module.exports = {
   classifyStage,
   recordInbound,
@@ -1104,6 +1109,7 @@ module.exports = {
   getStats,
   getVariantStats,
   getBookedContactIds,
+  getQualitativeInsights,
   startScheduledAnalysis,
   initFromDb,
   whenReady: () => _initPromise

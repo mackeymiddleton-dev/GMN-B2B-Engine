@@ -3042,8 +3042,9 @@ app.get('/api/brain/variants', requireAdmin, async (req, res) => {
       ok: true,
       variants,
       maxStep,
-      leadForms:        Array.from(leadFormSet).sort(),
-      leadFormFilter
+      leadForms:            Array.from(leadFormSet).sort(),
+      leadFormFilter,
+      qualitativeInsights:  brain.getQualitativeInsights()
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -5236,6 +5237,7 @@ async function loadBrain() {
     // Lead form and day filters are driven by the globals set at the top of
     // the page. Both compose — same as /api/brain/stats.
     let variantRows = '';
+    let insightsHtml = '';
     try {
       const vParams = [];
       if (currentDays) vParams.push('days=' + currentDays);
@@ -5340,6 +5342,27 @@ async function loadBrain() {
               </div>
             </div>\`;
         }
+        const qi = vData.qualitativeInsights;
+        if (qi && qi.text) {
+          const genAtStr = new Date(qi.generatedAt).toLocaleString('en-US', {timeZone:'America/Los_Angeles',month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit',hour12:true});
+          const nextAtStr = new Date(qi.generatedAt + 259200000).toLocaleString('en-US', {timeZone:'America/Los_Angeles',month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit',hour12:true});
+          const paras = qi.text.split('\n\n').filter(function(p){return p.trim();}).map(function(p){return '<p style="margin:0 0 14px">' + escHtml(p.trim()) + '</p>';}).join('');
+          insightsHtml = '<div style="margin-top:28px;border-top:1px solid rgba(203,213,225,.6);padding-top:20px">'
+            + '<div style="font-size:12px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px">AI Analysis</div>'
+            + '<div style="font-size:14px;color:#334155;line-height:1.75;padding:16px 18px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px">'
+            + paras
+            + '</div>'
+            + '<div style="margin-top:8px;font-size:11px;color:#94a3b8">'
+            + 'Last generated: <strong style="color:#64748b">' + escHtml(genAtStr) + ' PT</strong>'
+            + ' &nbsp;&bull;&nbsp; Next scheduled: <strong style="color:#64748b">' + escHtml(nextAtStr) + ' PT</strong>'
+            + '</div>'
+            + '</div>';
+        } else {
+          insightsHtml = '<div style="margin-top:28px;border-top:1px solid rgba(203,213,225,.6);padding-top:20px">'
+            + '<div style="font-size:12px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px">AI Analysis</div>'
+            + '<div style="font-size:13px;color:#94a3b8;padding:14px 16px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px">Analysis not yet generated — will run within 72h of first data.</div>'
+            + '</div>';
+        }
       }
     } catch (_) { /* variant stats are supplemental — ignore errors */ }
 
@@ -5347,6 +5370,7 @@ async function loadBrain() {
       \${stageHtml}
       \${leadFormHtml}
       \${variantRows}
+      \${insightsHtml}
     \`;
   } catch (err) {
     el.innerHTML = '<div class="empty">Failed to load: ' + escHtml(err.message) + '</div>';
