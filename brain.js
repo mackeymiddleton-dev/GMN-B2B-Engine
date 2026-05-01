@@ -1053,15 +1053,23 @@ async function runLlmAnalysis(patterns) {
     if (flat) summaryParts.push(flat);
   }
 
-  // Include variant performance data so LLM analysis is variant-aware
+  // Include variant performance data so LLM analysis is variant-aware.
+  // Only include variants that are currently enabled — if a variant has been
+  // disabled it means the team already learned from it and turned it off, so
+  // there is no value in asking the LLM to analyze it again.
+  const enabledVariants = new Set(
+    [...config.SCRIPTED_VARIANTS, 'E'].filter(v =>
+      prompts.get(`conversationPrompt.${v}.enabled`) === 'true'
+    )
+  );
   const variantStats = patterns.variantStats;
-  if (variantStats && variantStats.some(v => v.sent > 0)) {
+  if (variantStats && variantStats.some(v => v.sent > 0 && enabledVariants.has(v.variant))) {
     const variantLines = variantStats
-      .filter(v => v.sent > 0)
+      .filter(v => v.sent > 0 && enabledVariants.has(v.variant))
       .map(v =>
         `  Variant ${v.variant}: ${v.sent} msgs sent | Reply: ${v.replyRate !== null ? v.replyRate + '%' : '—'} | Booked: ${v.booked} | Book Rate: ${v.bookingRate !== null ? v.bookingRate + '%' : '—'} | Contacts: ${v.contactsAssigned}`
       ).join('\n');
-    const variantLabel = [...config.SCRIPTED_VARIANTS, 'E'].join('/');
+    const variantLabel = [...enabledVariants].join('/');
     summaryParts.push(`=== ${variantLabel} Discovery Script Variant Performance ===\n${variantLines}`);
   }
 
