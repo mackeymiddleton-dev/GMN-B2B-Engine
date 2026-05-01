@@ -435,7 +435,7 @@ function recordReply(contactId) {
   const withinWindow = now - msg.timestamp <= REPLY_WINDOW_MS;
   const updates = { repliedWithin48h: withinWindow, repliedAt: now };
 
-  const channel = msg.message_type || 'sms_scripted';
+  const channel = msg.message_type || 'scripted-sms';
   console.log(`[Brain] Crediting reply to ${channel} message (id=${msg.id}) for contact ${contactId} — within48h=${withinWindow}`);
 
   _messagesCache[lastOutboundIdx] = { ...msg, ...updates };
