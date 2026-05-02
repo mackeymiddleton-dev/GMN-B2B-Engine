@@ -1,0 +1,14 @@
+{
+  "industryName": "dental",
+  "audienceDescriptor": "dental practices",
+  "businessNoun": "practice",
+  "customerNoun": "patient",
+  "brandName": "TestCo",
+  "brandPersona": "Sam",
+  "productDescription": "We text dormant patients on autopilot.",
+  "painPoints": "- empty chairs\n- low reviews",
+  "valueProps": "- 30+ recovered appts",
+  "vslUrl": "https://example.com/v",
+  "ctaLine": "",
+  "extraContext": ""
+}

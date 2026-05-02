@@ -545,7 +545,7 @@ function formatEnrichmentContext(enrichment) {
         return `- ${s.name} (${mi} mile${mi === 1 ? '' : 's'} away)`;
       })
       .join('\n');
-    parts.push(`NEARBY REFERRAL SOURCES (ENTs, health insurers, and audiologist referral offices within ~1.2 miles — use the name and distance directly in the message):\n${sourceLines}`);
+    parts.push(`NEARBY REFERRAL SOURCES (relevant local businesses within ~1.2 miles — use the name and distance directly in the message):\n${sourceLines}`);
   }
 
   return parts.join('\n\n');

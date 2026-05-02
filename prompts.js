@@ -19,6 +19,7 @@
 const fs = require('fs');
 const path = require('path');
 const config = require('./config');
+const industry = require('./industry');
 
 const FILE = path.join(__dirname, 'data', 'prompts.json');
 
@@ -516,7 +517,10 @@ function save(data) {
  */
 function get(name) {
   const stored = load();
-  return stored[name] !== undefined ? stored[name] : (DEFAULTS[name] || '');
+  const raw = stored[name] !== undefined ? stored[name] : (DEFAULTS[name] || '');
+  // Interpolate {{tokens}} from data/industry.json so the same prompt text
+  // works for any industry without code changes.
+  return industry.interpolate(raw);
 }
 
 /**

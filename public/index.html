@@ -2,8 +2,106 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Powered Up AI</title>
-<script>window.location.replace('/admin' + window.location.search);</script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SMS Sales Engine — White-Label AI Conversational Outreach</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{min-height:100%}
+body{
+  background:
+    radial-gradient(circle at 8% 82%, rgba(45,212,191,.14) 0, rgba(45,212,191,0) 28%),
+    radial-gradient(circle at 92% 12%, rgba(56,189,248,.14) 0, rgba(56,189,248,0) 26%),
+    linear-gradient(180deg,#fbfbfb 0%,#f7fbfb 48%,#ffffff 100%);
+  color:#0f172a;
+  font-family:'Inter',system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  -webkit-font-smoothing:antialiased;
+  padding:48px 20px 80px;
+}
+.wrap{max-width:980px;margin:0 auto}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.32em;color:#0ea56f;text-transform:uppercase;text-align:center;margin-bottom:20px}
+h1{font-size:clamp(40px,6vw,68px);font-weight:900;letter-spacing:-.04em;line-height:1.02;text-align:center;margin-bottom:20px}
+h1 span{background:linear-gradient(90deg,#0ea56f 0%,#0891b2 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.subhead{font-size:18px;color:#475569;text-align:center;max-width:680px;margin:0 auto 40px;line-height:1.6}
+.cta-row{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-bottom:60px}
+.btn{display:inline-flex;align-items:center;gap:8px;font-size:14px;font-weight:700;padding:14px 22px;border-radius:999px;text-decoration:none;transition:all .15s;border:1px solid transparent}
+.btn-primary{background:linear-gradient(180deg,#28c48a 0%,#0ea56f 100%);color:#fff;box-shadow:0 10px 24px rgba(16,185,129,.3),inset 0 1px 0 rgba(255,255,255,.28)}
+.btn-primary:hover{filter:brightness(1.04)}
+.btn-secondary{background:#fff;color:#0f172a;border-color:rgba(203,213,225,.9);box-shadow:0 1px 2px rgba(15,23,42,.04)}
+.btn-secondary:hover{border-color:#94a3b8}
+.panel{background:rgba(255,255,255,.86);backdrop-filter:blur(12px);border:1px solid rgba(203,213,225,.7);border-radius:24px;padding:32px;margin-bottom:24px;box-shadow:0 18px 42px rgba(15,23,42,.06)}
+.panel h2{font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:14px}
+.panel p{color:#475569;line-height:1.7;font-size:15px;margin-bottom:12px}
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px;margin-top:8px}
+.step{background:#fff;border:1px solid rgba(203,213,225,.8);border-radius:16px;padding:20px;position:relative}
+.step .num{position:absolute;top:-14px;left:18px;width:32px;height:32px;border-radius:50%;background:linear-gradient(180deg,#28c48a 0%,#0ea56f 100%);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;box-shadow:0 6px 12px rgba(16,185,129,.28)}
+.step h3{font-size:15px;font-weight:800;margin:6px 0 6px;letter-spacing:-.01em}
+.step p{font-size:13.5px;color:#64748b;line-height:1.6;margin:0}
+.examples{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:16px}
+.ex{padding:12px 14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;font-size:13px;color:#334155;font-weight:600;text-align:center}
+.kv{display:grid;grid-template-columns:140px 1fr;gap:6px 18px;font-size:13.5px;margin-top:14px}
+.kv dt{color:#64748b;font-weight:700}
+.kv dd{color:#0f172a}
+code{font-family:'SF Mono',SFMono-Regular,Consolas,monospace;font-size:12.5px;background:#f1f5f9;padding:2px 7px;border-radius:6px;color:#0f172a;border:1px solid #e2e8f0}
+.footer{text-align:center;color:#94a3b8;font-size:12px;margin-top:40px;font-weight:600;letter-spacing:.04em}
+.footer a{color:#0ea56f;text-decoration:none;font-weight:700}
+ul.bullets{margin:8px 0 0 20px;color:#475569;font-size:14.5px;line-height:1.8}
+.note{font-size:13px;color:#64748b;background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:14px 16px;margin-top:14px}
+</style>
 </head>
-<body></body>
+<body>
+<div class="wrap">
+  <div class="eyebrow">White-Label SMS Sales Engine</div>
+  <h1>Texting people on behalf of <span>any</span> local business.</h1>
+  <p class="subhead">An AI-powered SMS conversation engine that opens, qualifies, and books leads for any industry. Configure it once for your niche, build your conversation flow visually, and let it run.</p>
+
+  <div class="cta-row">
+    <a class="btn btn-primary" href="/admin">Open the Admin &rarr;</a>
+    <a class="btn btn-secondary" href="#how-it-works">How it works</a>
+  </div>
+
+  <div class="panel" id="how-it-works">
+    <h2>What you need to do</h2>
+    <p>This codebase ships empty. You bring two things — your industry context and your conversation script — and the rest of the engine (Google Maps lookups, visibility scans, follow-up scheduler, learning brain) runs the same for everyone.</p>
+    <div class="steps">
+      <div class="step"><div class="num">1</div><h3>Set your industry</h3><p>Open <strong>Setup</strong>. Tell the AI who it's texting, what your product does, and the pain points it should reference.</p></div>
+      <div class="step"><div class="num">2</div><h3>Build your variants</h3><p>Open <strong>Variants</strong>. Drag together the steps of your conversation — text steps, business detection, and the final video send.</p></div>
+      <div class="step"><div class="num">3</div><h3>Wire your CRM</h3><p>Point your GoHighLevel webhooks at this server. New contacts get assigned a variant and the AI takes over.</p></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Works for any industry texting local businesses</h2>
+    <p>The Google Maps lookup, visibility scan, and competitor research layer is universally useful — anyone selling to local businesses can use the same enrichment to make their messages personal.</p>
+    <div class="examples">
+      <div class="ex">Dental practices</div>
+      <div class="ex">Real estate agents</div>
+      <div class="ex">Restaurants</div>
+      <div class="ex">Gyms &amp; studios</div>
+      <div class="ex">Med spas</div>
+      <div class="ex">Auto shops</div>
+      <div class="ex">Law firms</div>
+      <div class="ex">Home services</div>
+    </div>
+    <div class="note"><strong>Heads up:</strong> the Google Places + DataForSEO integrations and the GoHighLevel webhooks need API keys. Set them as environment variables (<code>GOOGLE_PLACES_KEY</code>, <code>DATAFORSEO_LOGIN</code>, <code>DATAFORSEO_PASSWORD</code>, <code>GHL_API_KEY</code>, <code>ANTHROPIC_API_KEY</code>, <code>ADMIN_KEY</code>). The admin URL requires <code>?key=YOUR_ADMIN_KEY</code>.</p></div>
+  </div>
+
+  <div class="panel">
+    <h2>What's inside</h2>
+    <dl class="kv">
+      <dt>Setup wizard</dt><dd><a href="/admin/setup">/admin/setup</a> — one form for your industry + brand context.</dd>
+      <dt>Variant builder</dt><dd><a href="/admin/variants">/admin/variants</a> — visual editor for conversation steps.</dd>
+      <dt>Prompt editor</dt><dd><a href="/admin/prompts">/admin/prompts</a> — advanced override of system / follow-up prompts.</dd>
+      <dt>Dashboard</dt><dd><a href="/admin">/admin</a> — live conversations, funnel, learning brain, enrollment tools.</dd>
+      <dt>Conversation tester</dt><dd><a href="/admin/playground">/admin/playground</a> — simulate prospects without spending API.</dd>
+    </dl>
+  </div>
+
+  <div class="footer">
+    Built on Express + Anthropic + GoHighLevel + Google Places. <a href="/admin">Go to the admin &rarr;</a>
+  </div>
+</div>
+</body>
 </html>

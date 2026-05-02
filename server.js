@@ -38,6 +38,20 @@ const brain = require('./brain');
 const followups = require('./followups');
 const reconciliation = require('./reconciliation');
 const prompts = require('./prompts');
+const industry = require('./industry');
+const variantBuilder = require('./variant-builder');
+
+// Resolve the system-prompt body for a given variant id. Prefers a structured
+// variant built in /admin/variants; falls back to the legacy raw-text prompt
+// keyed by `conversationPrompt.${id}` so existing data keeps working.
+function resolveVariantPrompt(variantId) {
+  if (variantId) {
+    const sv = variantBuilder.getVariant(variantId);
+    if (sv) return variantBuilder.compileVariant(sv);
+  }
+  const key = variantId ? `conversationPrompt.${variantId}` : 'conversationPrompt';
+  return prompts.get(key) || prompts.get('conversationPrompt');
+}
 const { runEnrollment } = require('./enrollment');
 const spend = require('./spend');
 const optouts = require('./optouts');
@@ -629,11 +643,10 @@ async function generateAndSendOpener(contactId) {
     // research/scan data yet (none exists at enrollment time) and CURRENT STEP=0.
     const variant = contact.variant || null;
     let systemContent;
-    if (variant === 'E') {
+    if (variant === 'E' && !variantBuilder.getVariant('E')) {
       systemContent = buildVariantESystemPrompt(0);
     } else {
-      const variantPromptKey = variant ? `conversationPrompt.${variant}` : 'conversationPrompt';
-      systemContent = prompts.get(variantPromptKey) || prompts.get('conversationPrompt');
+      systemContent = resolveVariantPrompt(variant);
     }
     if (contact.firstName) systemContent += `\n\nPROSPECT FIRST NAME: ${contact.firstName}`;
     if (contact.city)      systemContent += `\n\nPROSPECT CITY: ${contact.city}`;
@@ -1294,11 +1307,10 @@ async function generateAndSendAiReply(contactId, resolvedConvId, opts = {}) {
   // by currentStep. All other variants use a single flat prompt key.
   const contactVariant = fresh?.variant || null;
   let systemContent;
-  if (contactVariant === 'E') {
+  if (contactVariant === 'E' && !variantBuilder.getVariant('E')) {
     systemContent = buildVariantESystemPrompt(fresh?.currentStep ?? 0, fresh?.variantEBranch || null);
   } else {
-    const variantPromptKey = contactVariant ? `conversationPrompt.${contactVariant}` : 'conversationPrompt';
-    systemContent = prompts.get(variantPromptKey) || prompts.get('conversationPrompt');
+    systemContent = resolveVariantPrompt(contactVariant);
   }
 
   if (resolvedFirstName || fresh?.firstName) {
@@ -2712,6 +2724,78 @@ app.get('/admin/prompts', (req, res) => {
   res.send(buildPromptEditorPage(key, all));
 });
 
+// ─── Admin: Industry Setup Wizard ─────────────────────────────────────────────
+
+function _checkAdminPage(req, res) {
+  if (!process.env.ADMIN_KEY) { res.status(503).send('ADMIN_KEY not configured'); return null; }
+  const key = req.query.key || req.headers['x-admin-key'];
+  if (!key || key !== process.env.ADMIN_KEY) {
+    res.status(401).send('Unauthorized. Add ?key=YOUR_ADMIN_KEY to the URL.');
+    return null;
+  }
+  return key;
+}
+
+app.get('/admin/setup', (req, res) => {
+  const key = _checkAdminPage(req, res); if (!key) return;
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store');
+  res.send(buildIndustrySetupPage(key, industry.load()));
+});
+
+app.get('/admin/api/industry', requireAdmin, (req, res) => {
+  res.json({ ok: true, industry: industry.load() });
+});
+
+app.post('/admin/api/industry', requireAdmin, express.json({ limit: '256kb' }), (req, res) => {
+  try {
+    const saved = industry.set(req.body || {});
+    res.json({ ok: true, industry: saved });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
+// ─── Admin: Structured Variant Builder ────────────────────────────────────────
+
+app.get('/admin/variants', (req, res) => {
+  const key = _checkAdminPage(req, res); if (!key) return;
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store');
+  res.send(buildVariantBuilderPage(key));
+});
+
+app.get('/admin/api/structured-variants', requireAdmin, (req, res) => {
+  res.json({ ok: true, variants: variantBuilder.listVariants() });
+});
+
+app.post('/admin/api/structured-variants', requireAdmin, express.json({ limit: '512kb' }), (req, res) => {
+  try {
+    variantBuilder.createVariant(req.body || {});
+    res.json({ ok: true, variants: variantBuilder.listVariants() });
+  } catch (err) { res.status(400).json({ ok: false, error: err.message }); }
+});
+
+app.put('/admin/api/structured-variants/:id', requireAdmin, express.json({ limit: '512kb' }), (req, res) => {
+  try {
+    variantBuilder.updateVariant(req.params.id, req.body || {});
+    res.json({ ok: true, variants: variantBuilder.listVariants() });
+  } catch (err) { res.status(400).json({ ok: false, error: err.message }); }
+});
+
+app.delete('/admin/api/structured-variants/:id', requireAdmin, (req, res) => {
+  try {
+    variantBuilder.deleteVariant(req.params.id);
+    res.json({ ok: true, variants: variantBuilder.listVariants() });
+  } catch (err) { res.status(400).json({ ok: false, error: err.message }); }
+});
+
+app.get('/admin/api/structured-variants/:id/preview', requireAdmin, (req, res) => {
+  const v = variantBuilder.getVariant(req.params.id);
+  if (!v) return res.status(404).json({ ok: false, error: 'not found' });
+  res.json({ ok: true, compiled: variantBuilder.compileVariant(v) });
+});
+
 app.post('/admin/prompts/:name/reset', requireAdmin, (req, res) => {
   const { name } = req.params;
   try {
@@ -3105,12 +3189,10 @@ function _buildPlaygroundSystemPrompt(session) {
   let systemContent;
   if (session.variant === 'CUSTOM') {
     systemContent = String(session.customPrompt || '').trim();
-  } else if (session.variant === 'E') {
-    // Variant E uses the same modular composition as the live pipeline.
+  } else if (session.variant === 'E' && !variantBuilder.getVariant('E')) {
     systemContent = buildVariantESystemPrompt(session.currentStep || 0);
   } else {
-    const variantPromptKey = `conversationPrompt.${session.variant}`;
-    systemContent = prompts.get(variantPromptKey) || prompts.get('conversationPrompt');
+    systemContent = resolveVariantPrompt(session.variant);
   }
   if (session.firstName) systemContent += `\n\nPROSPECT FIRST NAME: ${session.firstName}`;
   if (session.city)      systemContent += `\n\nPROSPECT CITY: ${session.city}`;
@@ -4354,6 +4436,8 @@ ${DEV_MODE ? `<div style="position:fixed;top:0;left:0;right:0;z-index:9999;backg
     <h1>Admin Dashboard</h1>
   </div>
   <div class="header-right">
+    <a class="btn" href="/admin/setup?key=${adminKey}">Industry Setup &rarr;</a>
+    <a class="btn" href="/admin/variants?key=${adminKey}">Variant Builder &rarr;</a>
     <a class="btn" href="/admin/playground?key=${adminKey}">Conversation Tester &rarr;</a>
     <a class="btn" href="/admin/prompts?key=${adminKey}">Prompt Editor &rarr;</a>
     <a class="btn btn-primary" href="/admin/enroll?key=${adminKey}">Lead Enrollment &rarr;</a>
@@ -7180,4 +7264,446 @@ async function resetConvo() {
 </div>
 </body>
 </html>`;
+}
+
+// ─── Industry Setup Wizard Page ───────────────────────────────────────────────
+
+function buildIndustrySetupPage(adminKey, current) {
+  const safe = JSON.stringify(current || {});
+  return `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Industry Setup — White-Label SMS Engine</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:radial-gradient(circle at 8% 82%,rgba(45,212,191,.12) 0,rgba(45,212,191,0) 26%),radial-gradient(circle at 92% 12%,rgba(56,189,248,.12) 0,rgba(56,189,248,0) 24%),linear-gradient(180deg,#fbfbfb 0%,#f7fbfb 48%,#ffffff 100%);color:#0f172a;font-family:'Inter',system-ui,sans-serif;min-height:100vh;padding:32px 16px 80px;-webkit-font-smoothing:antialiased}
+.back-link{display:block;max-width:820px;margin:0 auto 16px;color:#6b7280;font-size:13px;text-decoration:none;font-weight:600}
+.logo{font-size:12px;font-weight:600;letter-spacing:.32em;color:#9ca3af;text-transform:uppercase;text-align:center;margin-bottom:18px}
+h1{font-size:clamp(34px,5vw,52px);font-weight:900;text-align:center;margin-bottom:14px;letter-spacing:-.04em;line-height:1.05}
+.subtitle{font-size:15px;color:#475569;text-align:center;max-width:680px;margin:0 auto 28px;line-height:1.6}
+.card{background:rgba(255,255,255,.86);backdrop-filter:blur(12px);border:1px solid rgba(203,213,225,.7);border-radius:22px;padding:28px;max-width:820px;margin:0 auto 22px;box-shadow:0 18px 42px rgba(15,23,42,.06)}
+.card h2{font-size:16px;font-weight:800;letter-spacing:-.01em;margin-bottom:6px}
+.card .desc{font-size:13px;color:#64748b;margin-bottom:16px;line-height:1.6}
+.field{margin-bottom:16px}
+.field label{display:block;font-size:12px;font-weight:700;color:#0f172a;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+.field .hint{font-size:12px;color:#94a3b8;margin-bottom:6px;line-height:1.5}
+input[type="text"],input[type="url"],textarea{width:100%;background:#fff;border:1px solid rgba(203,213,225,.9);border-radius:12px;padding:11px 14px;font-family:inherit;font-size:14px;color:#0f172a;outline:none;transition:border-color .15s,box-shadow .15s}
+textarea{font-family:'SF Mono',Consolas,monospace;font-size:12.5px;line-height:1.55;min-height:110px;resize:vertical}
+input:focus,textarea:focus{border-color:#0ea56f;box-shadow:0 0 0 3px rgba(16,185,129,.12)}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:560px){.row{grid-template-columns:1fr}}
+.btn{display:inline-flex;align-items:center;gap:6px;font-size:14px;font-weight:700;padding:11px 20px;border-radius:999px;border:1px solid rgba(203,213,225,.9);background:#fff;color:#334155;cursor:pointer;text-decoration:none;transition:all .15s}
+.btn:hover{border-color:#94a3b8;color:#0f172a}
+.btn-primary{background:linear-gradient(180deg,#28c48a 0%,#0ea56f 100%);border-color:transparent;color:#fff;box-shadow:0 8px 18px rgba(16,185,129,.22)}
+.actions{display:flex;justify-content:space-between;align-items:center;max-width:820px;margin:0 auto;gap:12px;flex-wrap:wrap}
+.status{font-size:13px;font-weight:600;color:#0ea56f}
+.status.err{color:#dc2626}
+.examples{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}
+.ex-chip{font-size:12px;font-weight:700;padding:7px 14px;border-radius:999px;border:1px solid rgba(203,213,225,.9);background:#fff;color:#334155;cursor:pointer;transition:all .15s}
+.ex-chip:hover{border-color:#0ea56f;color:#0ea56f}
+</style></head>
+<body>
+<a class="back-link" href="/admin?key=${adminKey}">&larr; Back to Dashboard</a>
+<div class="logo">White-Label SMS Engine</div>
+<h1>Industry Setup</h1>
+<p class="subtitle">Tell the AI who it's texting and what your product does. Every prompt in the system references these values via <code style="background:#f1f5f9;padding:2px 6px;border-radius:5px;font-size:12px">{{tokens}}</code>, so changing them here updates the entire engine instantly.</p>
+
+<div class="card">
+  <h2>Quick start: pick an example to pre-fill</h2>
+  <div class="desc">These are starter scaffolds — edit anything before saving.</div>
+  <div class="examples">
+    <button class="ex-chip" onclick="loadExample('dental')">Dental practices</button>
+    <button class="ex-chip" onclick="loadExample('restaurant')">Restaurants</button>
+    <button class="ex-chip" onclick="loadExample('realestate')">Real estate</button>
+    <button class="ex-chip" onclick="loadExample('gym')">Gyms / studios</button>
+    <button class="ex-chip" onclick="loadExample('clear')" style="color:#dc2626;border-color:#fecaca">Clear all</button>
+  </div>
+</div>
+
+<form id="form" class="card" onsubmit="return save(event)">
+  <h2>Brand</h2>
+  <div class="row">
+    <div class="field">
+      <label>Brand name <span style="color:#dc2626">*</span></label>
+      <div class="hint">Your company name. Token: {{brandName}}</div>
+      <input type="text" id="brandName" placeholder="e.g. Acme AI" required>
+    </div>
+    <div class="field">
+      <label>Persona (signature)</label>
+      <div class="hint">The human first name the AI texts as. Token: {{brandPersona}}</div>
+      <input type="text" id="brandPersona" placeholder="e.g. Sidney">
+    </div>
+  </div>
+</form>
+
+<form class="card">
+  <h2>Audience</h2>
+  <div class="row">
+    <div class="field">
+      <label>Industry name <span style="color:#dc2626">*</span></label>
+      <div class="hint">Lowercase noun the AI uses in conversation. Token: {{industryName}}</div>
+      <input type="text" id="industryName" placeholder="e.g. dental, restaurant, real estate">
+    </div>
+    <div class="field">
+      <label>Audience descriptor <span style="color:#dc2626">*</span></label>
+      <div class="hint">Who you're texting. Token: {{audienceDescriptor}}</div>
+      <input type="text" id="audienceDescriptor" placeholder="e.g. dental practice owners">
+    </div>
+  </div>
+  <div class="row">
+    <div class="field">
+      <label>Business noun</label>
+      <div class="hint">Word for their business. Token: {{businessNoun}}</div>
+      <input type="text" id="businessNoun" placeholder="e.g. practice, clinic, shop">
+    </div>
+    <div class="field">
+      <label>Customer noun</label>
+      <div class="hint">Word for the people they serve. Token: {{customerNoun}}</div>
+      <input type="text" id="customerNoun" placeholder="e.g. patient, client, guest">
+    </div>
+  </div>
+</form>
+
+<form class="card">
+  <h2>Product context</h2>
+  <div class="field">
+    <label>What your product does</label>
+    <div class="hint">2–4 sentences in plain language. Token: {{productDescription}}</div>
+    <textarea id="productDescription" placeholder="e.g. We run automated SMS campaigns that wake up your dormant patient list, fill empty appointment slots, and stop nearby competitors from outranking you on Google."></textarea>
+  </div>
+  <div class="field">
+    <label>Pain points your audience feels</label>
+    <div class="hint">One per line. The AI references these when bridging off-script replies. Token: {{painPoints}}</div>
+    <textarea id="painPoints" placeholder="- Empty appointment slots cost hundreds of dollars each&#10;- Front desk forgets to follow up with no-shows&#10;- Reviews lag behind the competitor down the street"></textarea>
+  </div>
+  <div class="field">
+    <label>Outcomes you deliver</label>
+    <div class="hint">One per line. Token: {{valueProps}}</div>
+    <textarea id="valueProps" placeholder="- 30+ recovered appointments per month from dormant lists&#10;- 12% reply rate on automated outreach&#10;- New 5-star reviews on autopilot"></textarea>
+  </div>
+  <div class="field">
+    <label>Final video / booking URL</label>
+    <div class="hint">Where the conversation hands off (VSL, Calendly, demo). Token: {{vslUrl}}</div>
+    <input type="url" id="vslUrl" placeholder="https://yourbrand.com/demo">
+  </div>
+  <div class="field">
+    <label>Extra context (optional)</label>
+    <div class="hint">Anything else the AI should know — competitors, jargon, do-not-mention list. Token: {{extraContext}}</div>
+    <textarea id="extraContext" placeholder=""></textarea>
+  </div>
+</form>
+
+<div class="actions">
+  <span class="status" id="status"></span>
+  <div style="display:flex;gap:10px">
+    <a class="btn" href="/admin/variants?key=${adminKey}">Variant Builder &rarr;</a>
+    <button class="btn btn-primary" onclick="save(event)">Save Industry Config</button>
+  </div>
+</div>
+
+<script>
+const ADMIN_KEY = ${JSON.stringify(adminKey)};
+const FIELDS = ['brandName','brandPersona','industryName','audienceDescriptor','businessNoun','customerNoun','productDescription','painPoints','valueProps','vslUrl','extraContext'];
+const initial = ${safe};
+FIELDS.forEach(f => { const el = document.getElementById(f); if (el && initial[f] != null) el.value = initial[f]; });
+
+const EXAMPLES = {
+  dental: {brandName:'',brandPersona:'',industryName:'dental',audienceDescriptor:'dental practice owners',businessNoun:'practice',customerNoun:'patient',productDescription:'We run automated SMS campaigns that wake up dormant patient lists, fill empty appointment slots, and stop nearby practices from outranking you on Google.',painPoints:'- Empty chairs cost $200+ each\\n- Patients drift to the practice with more Google reviews\\n- Front desk forgets to follow up on unscheduled treatment',valueProps:'- 30+ recovered appointments per month\\n- New 5-star reviews on autopilot\\n- Dormant patients reactivated without staff effort',vslUrl:'',extraContext:''},
+  restaurant: {brandName:'',brandPersona:'',industryName:'restaurant',audienceDescriptor:'independent restaurant owners',businessNoun:'restaurant',customerNoun:'guest',productDescription:'We run AI text campaigns that bring back lapsed regulars, fill slow weeknights, and grow Google review counts faster than the chain across the street.',painPoints:'- Slow Tuesdays / Wednesdays cut margin in half\\n- Regulars vanish after 60 days and never come back\\n- Review counts trail the franchise nearby',valueProps:'- 20–40 reactivated regulars per month\\n- Slow-night covers up 15–25%\\n- Steady stream of new 5-star Google reviews',vslUrl:'',extraContext:''},
+  realestate: {brandName:'',brandPersona:'',industryName:'real estate',audienceDescriptor:'residential real estate agents',businessNoun:'team',customerNoun:'client',productDescription:'We text past leads on your behalf so listings get viewed, dormant buyers get re-engaged, and seller appointments fill your calendar.',painPoints:'- Old leads sit cold and never get a follow-up text\\n- Open houses are under-attended\\n- Competing agents are top of mind, you are not',valueProps:'- 5–10 reactivated buyer/seller convos per month\\n- Open-house RSVPs without manual texting\\n- Past clients refer you because you stay in front of them',vslUrl:'',extraContext:''},
+  gym: {brandName:'',brandPersona:'',industryName:'fitness',audienceDescriptor:'gym and studio owners',businessNoun:'gym',customerNoun:'member',productDescription:'We text former and at-risk members to re-enroll them, plus run new-lead nurture so trial sign-ups actually convert into paying members.',painPoints:'- Dropped members never come back\\n- Trial-to-paid conversion stalls below 30%\\n- Front desk has no time to follow up',valueProps:'- 15–25 reactivated members per month\\n- Trial conversion lifted to 50%+\\n- Hands-off lead nurture',vslUrl:'',extraContext:''},
+  clear: Object.fromEntries(FIELDS.map(f => [f, '']))
+};
+
+function loadExample(key) {
+  const ex = EXAMPLES[key]; if (!ex) return;
+  FIELDS.forEach(f => { const el = document.getElementById(f); if (el) el.value = ex[f] || ''; });
+}
+
+async function save(e) {
+  if (e) e.preventDefault();
+  const status = document.getElementById('status');
+  const payload = {};
+  FIELDS.forEach(f => { const el = document.getElementById(f); if (el) payload[f] = el.value.trim(); });
+  if (!payload.brandName || !payload.industryName || !payload.audienceDescriptor) {
+    status.textContent = 'Brand, industry, and audience descriptor are required.';
+    status.className = 'status err'; return false;
+  }
+  status.textContent = 'Saving…'; status.className = 'status';
+  try {
+    const r = await fetch('/admin/api/industry?key=' + encodeURIComponent(ADMIN_KEY), {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload)
+    });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'save failed');
+    status.textContent = 'Saved ✓ — every prompt in the system now uses these values.';
+    status.className = 'status';
+  } catch (err) {
+    status.textContent = 'Error: ' + err.message; status.className = 'status err';
+  }
+  return false;
+}
+</script>
+</body></html>`;
+}
+
+// ─── Variant Builder Page ─────────────────────────────────────────────────────
+
+function buildVariantBuilderPage(adminKey) {
+  return `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Variant Builder — White-Label SMS Engine</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:radial-gradient(circle at 8% 82%,rgba(45,212,191,.12) 0,rgba(45,212,191,0) 26%),radial-gradient(circle at 92% 12%,rgba(56,189,248,.12) 0,rgba(56,189,248,0) 24%),linear-gradient(180deg,#fbfbfb 0%,#f7fbfb 48%,#ffffff 100%);color:#0f172a;font-family:'Inter',system-ui,sans-serif;min-height:100vh;padding:32px 16px 80px;-webkit-font-smoothing:antialiased}
+.back-link{display:block;max-width:1100px;margin:0 auto 16px;color:#6b7280;font-size:13px;text-decoration:none;font-weight:600}
+.logo{font-size:12px;font-weight:600;letter-spacing:.32em;color:#9ca3af;text-transform:uppercase;text-align:center;margin-bottom:18px}
+h1{font-size:clamp(34px,5vw,50px);font-weight:900;text-align:center;margin-bottom:14px;letter-spacing:-.04em;line-height:1.05}
+.subtitle{font-size:15px;color:#475569;text-align:center;max-width:760px;margin:0 auto 28px;line-height:1.6}
+.layout{max-width:1100px;margin:0 auto;display:grid;grid-template-columns:280px 1fr;gap:18px}
+@media(max-width:820px){.layout{grid-template-columns:1fr}}
+.card{background:rgba(255,255,255,.86);backdrop-filter:blur(12px);border:1px solid rgba(203,213,225,.7);border-radius:22px;padding:22px;box-shadow:0 18px 42px rgba(15,23,42,.06)}
+.side h3{font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.1em;margin-bottom:12px}
+.var-list{display:flex;flex-direction:column;gap:8px;margin-bottom:14px}
+.var-item{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 14px;background:#fff;border:1px solid rgba(203,213,225,.9);border-radius:12px;cursor:pointer;font-weight:600;font-size:13px;color:#334155}
+.var-item:hover{border-color:#94a3b8}
+.var-item.active{background:linear-gradient(180deg,#28c48a 0%,#0ea56f 100%);color:#fff;border-color:transparent;box-shadow:0 6px 14px rgba(16,185,129,.22)}
+.var-item .id{font-family:'SF Mono',monospace;font-size:11px;opacity:.75}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;font-size:13px;font-weight:700;padding:9px 14px;border-radius:999px;border:1px solid rgba(203,213,225,.9);background:#fff;color:#334155;cursor:pointer;text-decoration:none;transition:all .15s;font-family:inherit}
+.btn:hover{border-color:#94a3b8;color:#0f172a}
+.btn-primary{background:linear-gradient(180deg,#28c48a 0%,#0ea56f 100%);border-color:transparent;color:#fff;box-shadow:0 6px 14px rgba(16,185,129,.22)}
+.btn-danger{background:#fff;color:#dc2626;border-color:#fecaca}
+.btn-danger:hover{border-color:#dc2626}
+.btn-block{width:100%}
+.empty{text-align:center;color:#94a3b8;font-size:13px;padding:40px 20px;font-weight:500}
+.editor-head{display:flex;align-items:center;gap:12px;margin-bottom:18px;flex-wrap:wrap}
+.editor-head input{flex:1;min-width:160px;background:#fff;border:1px solid rgba(203,213,225,.9);border-radius:10px;padding:9px 12px;font-family:inherit;font-size:14px;font-weight:600;color:#0f172a;outline:none}
+.editor-head input:focus{border-color:#0ea56f}
+.editor-head .id-badge{font-family:'SF Mono',monospace;font-size:11px;background:#f1f5f9;padding:5px 10px;border-radius:6px;color:#0f172a;border:1px solid #e2e8f0;font-weight:700}
+.steps-list{display:flex;flex-direction:column;gap:12px;margin-bottom:18px}
+.step{background:#fff;border:1px solid rgba(203,213,225,.9);border-radius:14px;padding:14px}
+.step-head{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+.step-num{width:30px;height:30px;border-radius:50%;background:linear-gradient(180deg,#28c48a 0%,#0ea56f 100%);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0;box-shadow:0 4px 8px rgba(16,185,129,.22)}
+.step-head select{background:#fff;border:1px solid rgba(203,213,225,.9);border-radius:8px;padding:6px 10px;font-family:inherit;font-size:12.5px;font-weight:600;color:#0f172a;outline:none;cursor:pointer}
+.step-head select:focus{border-color:#0ea56f}
+.step-spacer{flex:1}
+.step-iconbtn{background:transparent;border:1px solid rgba(203,213,225,.9);border-radius:8px;padding:5px 9px;font-size:12px;cursor:pointer;color:#64748b;font-family:inherit;font-weight:600}
+.step-iconbtn:hover{border-color:#94a3b8;color:#0f172a}
+.step-iconbtn.del{color:#dc2626;border-color:#fecaca}
+.step textarea{width:100%;background:#fafafa;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;font-family:'SF Mono',Consolas,monospace;font-size:12.5px;line-height:1.55;color:#0f172a;min-height:90px;resize:vertical;outline:none}
+.step textarea:focus{background:#fff;border-color:#0ea56f}
+.step-info{font-size:12px;color:#64748b;line-height:1.5;background:#f8fafc;border:1px dashed #cbd5e1;border-radius:8px;padding:9px 12px}
+.add-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}
+.actions-bar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;border-top:1px solid #e2e8f0;padding-top:18px}
+.status{font-size:13px;font-weight:600;color:#0ea56f}
+.status.err{color:#dc2626}
+.preview{margin-top:18px;background:#0f172a;color:#cbd5e1;border-radius:14px;padding:16px;font-family:'SF Mono',monospace;font-size:11.5px;line-height:1.55;white-space:pre-wrap;max-height:400px;overflow:auto;display:none}
+.preview.open{display:block}
+</style></head>
+<body>
+<a class="back-link" href="/admin?key=${adminKey}">&larr; Back to Dashboard</a>
+<div class="logo">White-Label SMS Engine</div>
+<h1>Variant Builder</h1>
+<p class="subtitle">Build the conversation, step by step. Each variant is a complete script the AI runs from opener to handoff. Use {{tokens}} like <code style="background:#f1f5f9;padding:2px 6px;border-radius:5px;font-size:12px">{{brandName}}</code> or <code style="background:#f1f5f9;padding:2px 6px;border-radius:5px;font-size:12px">{{industryName}}</code> in step text — they're filled from <a href="/admin/setup?key=${adminKey}" style="color:#0ea56f">Industry Setup</a> at runtime.</p>
+
+<div class="layout">
+  <div class="card side">
+    <h3>Variants</h3>
+    <div class="var-list" id="varList"></div>
+    <button class="btn btn-primary btn-block" onclick="newVariant()">+ New Variant</button>
+  </div>
+
+  <div class="card" id="editor">
+    <div class="empty" id="emptyState">Select a variant on the left, or create a new one.</div>
+    <div id="editorBody" style="display:none">
+      <div class="editor-head">
+        <span class="id-badge" id="editId"></span>
+        <input type="text" id="editName" placeholder="Variant name" maxlength="80">
+        <button class="btn btn-danger" onclick="deleteCurrent()">Delete</button>
+      </div>
+      <div class="steps-list" id="stepsList"></div>
+      <div class="add-row">
+        <button class="btn" onclick="addStep('text')">+ Text Step</button>
+        <button class="btn" onclick="addStep('practice_detection')">+ Business Detection</button>
+        <button class="btn" onclick="addStep('vsl_send')">+ Video/CTA Send</button>
+      </div>
+      <div class="actions-bar">
+        <span class="status" id="status"></span>
+        <div style="display:flex;gap:8px">
+          <button class="btn" onclick="togglePreview()">Preview compiled</button>
+          <button class="btn btn-primary" onclick="saveCurrent()">Save Variant</button>
+        </div>
+      </div>
+      <pre class="preview" id="preview"></pre>
+    </div>
+  </div>
+</div>
+
+<script>
+const ADMIN_KEY = ${JSON.stringify(adminKey)};
+let variants = [];
+let current = null;        // { id, name, steps }
+let isNew = false;
+
+async function api(method, path, body) {
+  const r = await fetch(path + (path.includes('?') ? '&' : '?') + 'key=' + encodeURIComponent(ADMIN_KEY), {
+    method, headers: body ? {'Content-Type':'application/json'} : undefined,
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const j = await r.json();
+  if (!j.ok) throw new Error(j.error || method + ' failed');
+  return j;
+}
+
+async function load() {
+  const j = await api('GET', '/admin/api/structured-variants');
+  variants = j.variants || [];
+  renderList();
+}
+
+function renderList() {
+  const list = document.getElementById('varList');
+  if (variants.length === 0) {
+    list.innerHTML = '<div style="font-size:12px;color:#94a3b8;text-align:center;padding:18px 6px">No variants yet. Create one to get started.</div>';
+    return;
+  }
+  list.innerHTML = variants.map(v =>
+    '<div class="var-item ' + (current && current.id === v.id && !isNew ? 'active' : '') + '" onclick="select(' + JSON.stringify(v.id).replace(/"/g, '&quot;') + ')"><span>' + escHtml(v.name) + '</span><span class="id">' + escHtml(v.id) + '</span></div>'
+  ).join('');
+}
+
+function select(id) {
+  const v = variants.find(x => x.id === id); if (!v) return;
+  current = JSON.parse(JSON.stringify(v));
+  isNew = false;
+  showEditor();
+}
+
+function newVariant() {
+  const id = prompt('Variant ID (1–16 chars, A-Z 0-9 _ -). Use a single letter like A, B, C if you can:');
+  if (!id) return;
+  if (!/^[A-Za-z0-9_-]{1,16}$/.test(id)) { alert('Invalid id'); return; }
+  if (variants.some(v => v.id === id)) { alert('That id already exists'); return; }
+  current = { id, name: 'Variant ' + id, steps: [] };
+  isNew = true;
+  showEditor();
+}
+
+function showEditor() {
+  document.getElementById('emptyState').style.display = 'none';
+  document.getElementById('editorBody').style.display = 'block';
+  document.getElementById('editId').textContent = current.id;
+  document.getElementById('editName').value = current.name;
+  document.getElementById('status').textContent = '';
+  document.getElementById('preview').classList.remove('open');
+  renderSteps();
+  renderList();
+}
+
+function renderSteps() {
+  const root = document.getElementById('stepsList');
+  if (!current.steps || current.steps.length === 0) {
+    root.innerHTML = '<div class="empty">No steps yet — add one below.</div>';
+    return;
+  }
+  root.innerHTML = current.steps.map((s, i) => {
+    const num = i + 1;
+    let body;
+    if (s.type === 'text') {
+      body = '<textarea oninput="updateStep(' + i + ',\\'text\\',this.value)" placeholder="Message copy the AI sends. Use [first name] for the prospect name and {{tokens}} from Industry Setup.">' + escHtml(s.text || '') + '</textarea>';
+    } else if (s.type === 'practice_detection') {
+      body = '<div class="step-info">The AI sends a brief acknowledgment and silently emits <code>[PRACTICE_DETECTED:Name|Street|City]</code>. The system pauses the script, runs Google Maps + visibility research in the background, and resumes once data is ready.</div>';
+    } else if (s.type === 'vsl_send') {
+      body = '<textarea oninput="updateStep(' + i + ',\\'text\\',this.value)" placeholder="Optional: custom send copy. Leave blank to use a default. The {{vslUrl}} from Industry Setup is auto-appended if you do not include it.">' + escHtml(s.text || '') + '</textarea>';
+    }
+    const term = s.terminal || '';
+    return '<div class="step">' +
+      '<div class="step-head">' +
+        '<div class="step-num">' + num + '</div>' +
+        '<select onchange="updateStep(' + i + ',\\'type\\',this.value)">' +
+          '<option value="text"' + (s.type==='text'?' selected':'') + '>Text step</option>' +
+          '<option value="practice_detection"' + (s.type==='practice_detection'?' selected':'') + '>Business detection</option>' +
+          '<option value="vsl_send"' + (s.type==='vsl_send'?' selected':'') + '>Video / CTA send</option>' +
+        '</select>' +
+        '<select onchange="updateStep(' + i + ',\\'terminal\\',this.value||null)" title="Terminal marker">' +
+          '<option value=""' + (term===''?' selected':'') + '>(no terminal)</option>' +
+          '<option value="booked"' + (term==='booked'?' selected':'') + '>End: BOOKED</option>' +
+          '<option value="declined"' + (term==='declined'?' selected':'') + '>End: DECLINED</option>' +
+        '</select>' +
+        '<div class="step-spacer"></div>' +
+        '<button class="step-iconbtn" onclick="moveStep(' + i + ',-1)" ' + (i===0?'disabled':'') + '>↑</button>' +
+        '<button class="step-iconbtn" onclick="moveStep(' + i + ',1)" ' + (i===current.steps.length-1?'disabled':'') + '>↓</button>' +
+        '<button class="step-iconbtn del" onclick="deleteStep(' + i + ')">Delete</button>' +
+      '</div>' +
+      body +
+    '</div>';
+  }).join('');
+}
+
+function updateStep(i, key, val) {
+  if (!current.steps[i]) return;
+  current.steps[i][key] = val;
+  if (key === 'type') renderSteps();
+}
+function moveStep(i, dir) {
+  const j = i + dir; if (j < 0 || j >= current.steps.length) return;
+  const tmp = current.steps[i]; current.steps[i] = current.steps[j]; current.steps[j] = tmp;
+  renderSteps();
+}
+function deleteStep(i) {
+  if (!confirm('Delete step ' + (i+1) + '?')) return;
+  current.steps.splice(i, 1); renderSteps();
+}
+function addStep(type) {
+  current.steps.push({ type, text: type === 'practice_detection' ? '' : '', terminal: null });
+  renderSteps();
+}
+
+async function saveCurrent() {
+  const status = document.getElementById('status');
+  current.name = document.getElementById('editName').value.trim() || current.id;
+  status.textContent = 'Saving…'; status.className = 'status';
+  try {
+    if (isNew) await api('POST', '/admin/api/structured-variants', current);
+    else       await api('PUT',  '/admin/api/structured-variants/' + encodeURIComponent(current.id), current);
+    isNew = false;
+    await load();
+    select(current.id);
+    status.textContent = 'Saved ✓';
+  } catch (err) { status.textContent = 'Error: ' + err.message; status.className = 'status err'; }
+}
+
+async function deleteCurrent() {
+  if (!current) return;
+  if (!confirm('Delete variant "' + current.name + '" (id: ' + current.id + ')? This cannot be undone.')) return;
+  try {
+    if (!isNew) await api('DELETE', '/admin/api/structured-variants/' + encodeURIComponent(current.id));
+    current = null;
+    document.getElementById('editorBody').style.display = 'none';
+    document.getElementById('emptyState').style.display = 'block';
+    await load();
+  } catch (err) { alert('Error: ' + err.message); }
+}
+
+async function togglePreview() {
+  const pre = document.getElementById('preview');
+  if (pre.classList.contains('open')) { pre.classList.remove('open'); return; }
+  if (isNew) { pre.textContent = 'Save the variant first to preview the compiled prompt.'; pre.classList.add('open'); return; }
+  try {
+    const r = await fetch('/admin/api/structured-variants/' + encodeURIComponent(current.id) + '/preview?key=' + encodeURIComponent(ADMIN_KEY));
+    const j = await r.json();
+    pre.textContent = j.compiled || j.error || '(empty)';
+    pre.classList.add('open');
+  } catch (err) { pre.textContent = 'Error: ' + err.message; pre.classList.add('open'); }
+}
+
+function escHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+load().catch(err => alert('Failed to load variants: ' + err.message));
+</script>
+</body></html>`;
 }

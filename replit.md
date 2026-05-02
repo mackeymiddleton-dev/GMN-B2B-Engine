@@ -1,10 +1,32 @@
-# Powered Up AI — Project Notes
+# White-Label SMS Sales Engine — Project Notes
 
 ## What This Is
 
-GHL-integrated AI sales assistant for audiology practices. Node/Express backend, PostgreSQL database, Claude (claude-sonnet) for AI, GHL webhooks for contact management.
+White-label, AI-powered SMS sales engine. Originally built for audiology practices; now generalized so anyone selling to local businesses (dental, restaurant, real estate, gyms, etc.) can configure it in minutes. Node/Express backend, PostgreSQL database, Claude (claude-sonnet) for AI, GHL webhooks for contact management, Google Places + DataForSEO for visibility scans.
 
-Admin dashboard lives at `/admin?key=YOUR_ADMIN_KEY`.
+- Public landing page: `/`
+- Admin dashboard: `/admin?key=YOUR_ADMIN_KEY`
+- Industry setup: `/admin/setup?key=...`
+- Variant builder: `/admin/variants?key=...`
+
+## White-Label Architecture (added 2026-05-02)
+
+The codebase used to ship audiology-specific copy embedded in `config.js` and `data/prompts.json`. It is now industry-agnostic with two pluggable layers:
+
+1. **Industry config** — `industry.js` + `data/industry.json`. Holds brand, audience, business/customer nouns, product description, pain points, value props, VSL/booking URL, and free-text extra context. Edited via `/admin/setup`. Exposes `industry.interpolate(text)` which substitutes `{{tokens}}` (`{{brandName}}`, `{{industryName}}`, `{{audienceDescriptor}}`, `{{productDescription}}`, `{{painPoints}}`, `{{valueProps}}`, `{{vslUrl}}`, etc.) anywhere in any prompt. `prompts.get()` runs every returned value through this interpolator, so no other code change is needed when industry config changes.
+
+2. **Structured Variant Builder** — `variant-builder.js` + the `structuredVariants` array key inside `data/prompts.json`. Each variant is `{ id, name, steps[] }`. Step types: `text` (author-supplied copy), `practice_detection` (silently emits `[PRACTICE_DETECTED:Name|Street|City]` to trigger the existing background research/scan pipeline), `vsl_send` (final video/CTA send). Each step can carry `terminal: 'booked' | 'declined' | null` to append the existing terminal markers. `compileVariant()` produces the full system prompt by stacking: industry context block → shared output rules (markers, opt-out handling, off-script bridging) → numbered step instructions, then runs the whole thing through industry interpolation. CRUD via `/admin/api/structured-variants` (GET/POST/PUT/DELETE) and a compile preview at `/admin/api/structured-variants/:id/preview`. Edited via `/admin/variants`.
+
+**Dispatch wiring:** `server.js` has a `resolveVariantPrompt(variantId)` helper used by all 3 AI-call sites (opener generation ~line 645, `handleInbound` ~1313, playground `_buildPlaygroundSystemPrompt` ~3119). It checks `variantBuilder.getVariant(id)` first; if found, returns the compiled structured variant. Otherwise falls back to the legacy `conversationPrompt.${id}` raw-text key. **This means the legacy A/B/C/D/F/G/E variants still work** for any contact whose `variant` column matches one — but new operators should build via the structured editor.
+
+**Default state after the white-label cut (2026-05-02):**
+- `data/prompts.json` was wiped to `{ "structuredVariants": [] }` — all the audiology-specific override copy was removed.
+- `config.js` was slimmed: `SCRIPTED_VARIANTS = []`, all the long Variant E sub-prompts and per-letter audiology scripts replaced with a single tokenized placeholder `conversationPrompt`. `keyword`/`scanKeyword`/`competitorKeyword` set to generic `'local business'`.
+- `followUpPrompts.hook` and `.nurture` rewritten to use `{{audienceDescriptor}}` / `{{painPoints}}` / `{{valueProps}}` instead of hardcoded "audiology practice owner" copy.
+- `followups.js` line 551 referral-sources descriptor genericized from "ENTs/audiologists" → "relevant local businesses".
+- `public/index.html` replaced with a real landing page (was a redirect-to-/admin).
+
+**For audiology operators who want their old copy back:** restore the previous `data/prompts.json` from git history and reset SCRIPTED_VARIANTS in `config.js`. The legacy editor at `/admin/prompts` will pick up the audiology defaults again. Or use the new structured builder to rebuild the audiology flow visually — the `practice_detection` step type was specifically modeled on the old `[PRACTICE_DETECTED]` audiology behavior so existing scan/research pipeline still fires correctly.
 
 ---
 
