@@ -2696,11 +2696,7 @@ app.get('/api/optouts', requireAdmin, async (req, res) => {
 // ─── Admin: Dashboard ─────────────────────────────────────────────────────────
 
 app.get('/admin', (req, res) => {
-  if (!process.env.ADMIN_KEY) return res.status(503).send('ADMIN_KEY not configured');
-  const key = req.query.key || req.headers['x-admin-key'];
-  if (!key || key !== process.env.ADMIN_KEY) {
-    return res.status(401).send('Unauthorized. Add ?key=YOUR_ADMIN_KEY to the URL.');
-  }
+  const key = _checkAdminPage(req, res); if (!key) return;
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
   res.setHeader('Pragma', 'no-cache');
@@ -2710,11 +2706,7 @@ app.get('/admin', (req, res) => {
 // ─── Admin: Prompt Editor ─────────────────────────────────────────────────────
 
 app.get('/admin/prompts', (req, res) => {
-  if (!process.env.ADMIN_KEY) return res.status(503).send('ADMIN_KEY not configured');
-  const key = req.query.key || req.headers['x-admin-key'];
-  if (!key || key !== process.env.ADMIN_KEY) {
-    return res.status(401).send('Unauthorized. Add ?key=YOUR_ADMIN_KEY to the URL.');
-  }
+  const key = _checkAdminPage(req, res); if (!key) return;
   const all = prompts.listAll();
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
@@ -2727,10 +2719,15 @@ app.get('/admin/prompts', (req, res) => {
 // ─── Admin: Industry Setup Wizard ─────────────────────────────────────────────
 
 function _checkAdminPage(req, res) {
-  if (!process.env.ADMIN_KEY) { res.status(503).send('ADMIN_KEY not configured'); return null; }
+  if (!process.env.ADMIN_KEY) {
+    res.status(503).setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(buildSetupGuidePage('not_configured'));
+    return null;
+  }
   const key = req.query.key || req.headers['x-admin-key'];
   if (!key || key !== process.env.ADMIN_KEY) {
-    res.status(401).send('Unauthorized. Add ?key=YOUR_ADMIN_KEY to the URL.');
+    res.status(401).setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(buildSetupGuidePage(key ? 'wrong_key' : 'no_key'));
     return null;
   }
   return key;
@@ -3167,11 +3164,7 @@ function _gcPlaygroundSessions() {
 }
 
 app.get('/admin/playground', (req, res) => {
-  if (!process.env.ADMIN_KEY) return res.status(503).send('ADMIN_KEY not configured');
-  const key = req.query.key || req.headers['x-admin-key'];
-  if (!key || key !== process.env.ADMIN_KEY) {
-    return res.status(401).send('Unauthorized. Add ?key=YOUR_ADMIN_KEY to the URL.');
-  }
+  const key = _checkAdminPage(req, res); if (!key) return;
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
   res.send(buildPlaygroundPage(key));
@@ -3830,11 +3823,7 @@ app.post('/admin/playground/start', requireAdmin, async (req, res) => {
 // ─── Admin: Lead Enrollment ───────────────────────────────────────────────────
 
 app.get('/admin/enroll', (req, res) => {
-  if (!process.env.ADMIN_KEY) return res.status(503).send('ADMIN_KEY not configured');
-  const key = req.query.key || req.headers['x-admin-key'];
-  if (!key || key !== process.env.ADMIN_KEY) {
-    return res.status(401).send('Unauthorized. Add ?key=YOUR_ADMIN_KEY to the URL.');
-  }
+  const key = _checkAdminPage(req, res); if (!key) return;
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
   res.setHeader('Pragma', 'no-cache');
@@ -7706,4 +7695,107 @@ function escHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
 load().catch(err => alert('Failed to load variants: ' + err.message));
 </script>
 </body></html>`;
+}
+
+// ─── Setup Guide Page (shown when ADMIN_KEY is missing or wrong) ──────────────
+
+function buildSetupGuidePage(reason) {
+  const titles = {
+    not_configured: 'Almost there — set your admin key',
+    no_key: 'Add your admin key to the URL',
+    wrong_key: 'That admin key did not match'
+  };
+  const intros = {
+    not_configured: 'This server is running, but no <code>ADMIN_KEY</code> has been set yet. The admin key is the password that protects your dashboard. Set one as a Replit Secret, then reload.',
+    no_key: 'The admin dashboard is protected by an admin key. Add it to the URL as <code>?key=YOUR_ADMIN_KEY</code>.',
+    wrong_key: 'The key in the URL does not match the <code>ADMIN_KEY</code> secret on this server. Double-check the value and try again.'
+  };
+  const showSecretSteps = reason === 'not_configured';
+  return `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Setup — White-Label SMS Engine</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:radial-gradient(circle at 8% 82%,rgba(45,212,191,.14) 0,rgba(45,212,191,0) 28%),radial-gradient(circle at 92% 12%,rgba(56,189,248,.14) 0,rgba(56,189,248,0) 26%),linear-gradient(180deg,#fbfbfb 0%,#f7fbfb 48%,#ffffff 100%);color:#0f172a;font-family:'Inter',system-ui,sans-serif;min-height:100vh;padding:48px 20px 80px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:760px;margin:0 auto}
+.eyebrow{font-size:11px;font-weight:700;letter-spacing:.32em;color:#0ea56f;text-transform:uppercase;text-align:center;margin-bottom:18px}
+h1{font-size:clamp(32px,5vw,46px);font-weight:900;letter-spacing:-.03em;line-height:1.1;text-align:center;margin-bottom:14px}
+.intro{font-size:16px;color:#475569;text-align:center;max-width:580px;margin:0 auto 32px;line-height:1.65}
+.card{background:rgba(255,255,255,.92);backdrop-filter:blur(12px);border:1px solid rgba(203,213,225,.7);border-radius:22px;padding:28px;margin-bottom:18px;box-shadow:0 18px 42px rgba(15,23,42,.06)}
+.card h2{font-size:17px;font-weight:800;letter-spacing:-.01em;margin-bottom:12px}
+.steps{list-style:none;counter-reset:step;display:flex;flex-direction:column;gap:14px;margin-top:6px}
+.steps li{counter-increment:step;position:relative;padding:14px 16px 14px 56px;background:#fff;border:1px solid #e2e8f0;border-radius:14px;font-size:14px;color:#334155;line-height:1.6}
+.steps li::before{content:counter(step);position:absolute;left:14px;top:14px;width:30px;height:30px;border-radius:50%;background:linear-gradient(180deg,#28c48a 0%,#0ea56f 100%);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;box-shadow:0 4px 8px rgba(16,185,129,.22)}
+.steps li b{color:#0f172a;font-weight:700}
+code{font-family:'SF Mono',Consolas,monospace;font-size:12.5px;background:#f1f5f9;padding:3px 8px;border-radius:6px;color:#0f172a;border:1px solid #e2e8f0;font-weight:600}
+.tip{font-size:13px;color:#0c4a6e;background:#ecfeff;border:1px solid #bae6fd;border-radius:12px;padding:14px 16px;line-height:1.6;margin-top:14px}
+.tip b{color:#0c4a6e}
+.kv{display:grid;grid-template-columns:200px 1fr;gap:8px 18px;font-size:13.5px;margin-top:8px}
+.kv dt{color:#0f172a;font-weight:700}
+.kv dd{color:#475569;line-height:1.55}
+.btn-row{display:flex;justify-content:center;gap:10px;margin-top:18px;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:6px;font-size:14px;font-weight:700;padding:11px 22px;border-radius:999px;border:1px solid rgba(203,213,225,.9);background:#fff;color:#334155;text-decoration:none;transition:all .15s}
+.btn:hover{border-color:#94a3b8;color:#0f172a}
+.btn-primary{background:linear-gradient(180deg,#28c48a 0%,#0ea56f 100%);color:#fff;border-color:transparent;box-shadow:0 8px 18px rgba(16,185,129,.25)}
+.try{display:flex;gap:8px;align-items:center;margin-top:16px}
+.try input{flex:1;padding:11px 14px;border:1px solid #cbd5e1;border-radius:10px;font-family:'SF Mono',monospace;font-size:13px;outline:none}
+.try input:focus{border-color:#0ea56f;box-shadow:0 0 0 3px rgba(16,185,129,.12)}
+.try button{padding:11px 20px;border:0;border-radius:10px;background:linear-gradient(180deg,#28c48a 0%,#0ea56f 100%);color:#fff;font-weight:700;font-size:14px;cursor:pointer;font-family:inherit}
+.foot{text-align:center;font-size:12px;color:#94a3b8;margin-top:30px;font-weight:600;letter-spacing:.04em}
+.foot a{color:#0ea56f;text-decoration:none}
+</style></head>
+<body><div class="wrap">
+<div class="eyebrow">White-Label SMS Engine</div>
+<h1>${titles[reason]}</h1>
+<p class="intro">${intros[reason]}</p>
+
+${showSecretSteps ? `
+<div class="card">
+  <h2>Set your admin key (1 minute)</h2>
+  <ol class="steps">
+    <li>In your Replit workspace, open the <b>Tools</b> panel on the left and click <b>Secrets</b> (the lock icon).</li>
+    <li>Click <b>+ New Secret</b>. For the key, type <code>ADMIN_KEY</code>. For the value, type any password you want — make it long and random (e.g. <code>k9_x4vQ-8sB2-mP7w</code>).</li>
+    <li>Click <b>Add Secret</b>, then restart this Repl (the workflow auto-restarts when secrets change, but a manual restart never hurts).</li>
+    <li>Reload this page and use the URL <code>/admin?key=YOUR_ADMIN_KEY</code> with the value you just set.</li>
+  </ol>
+  <div class="tip"><b>Security note:</b> the admin key acts as your password. Treat it like one. Don't commit it to GitHub. Replit Secrets are stored separately from your code, so they're safe — but anyone with the key can control your conversation engine.</div>
+</div>` : `
+<div class="card">
+  <h2>Try opening the dashboard</h2>
+  <p style="font-size:14px;color:#475569;line-height:1.65;margin-bottom:6px">Paste your admin key below and we'll build the right URL for you.</p>
+  <div class="try">
+    <input id="key" type="text" placeholder="Your ADMIN_KEY value" autocomplete="off">
+    <button onclick="go()">Open Admin</button>
+  </div>
+  <script>
+    function go(){var k=document.getElementById('key').value.trim();if(!k)return;location.href='/admin?key='+encodeURIComponent(k);}
+    document.getElementById('key').addEventListener('keydown',function(e){if(e.key==='Enter')go();});
+  </script>
+  <div class="tip" style="margin-top:18px"><b>Forgot your key?</b> Open the Replit <b>Tools &rarr; Secrets</b> panel and look at the <code>ADMIN_KEY</code> value. If you want to change it, edit it there and restart the Repl.</div>
+</div>`}
+
+<div class="card">
+  <h2>What else you'll want to set up</h2>
+  <p style="font-size:14px;color:#475569;line-height:1.65;margin-bottom:14px">The admin key is enough to log in, but for the engine to actually run conversations, you'll also need these secrets. Add them the same way (Tools &rarr; Secrets):</p>
+  <dl class="kv">
+    <dt><code>ANTHROPIC_API_KEY</code></dt><dd>Required. Powers all AI replies. Get one at console.anthropic.com.</dd>
+    <dt><code>DATABASE_URL</code></dt><dd>Required. Postgres connection string. Replit gives you one for free under <b>Tools &rarr; Database</b>.</dd>
+    <dt><code>GHL_API_KEY</code></dt><dd>Required for live SMS. Your GoHighLevel sub-account API key.</dd>
+    <dt><code>GHL_LOCATION_ID</code></dt><dd>Required for live SMS. The GHL location/sub-account this engine sends from.</dd>
+    <dt><code>GHL_WEBHOOK_SECRET</code></dt><dd>Recommended. Protects your inbound webhook from spoofing.</dd>
+    <dt><code>GOOGLE_PLACES_KEY</code></dt><dd>Optional. Enables Google Maps lookup of the prospect's business so the AI can reference their address &amp; reviews.</dd>
+    <dt><code>DEV_MODE</code></dt><dd>Optional. Set to <code>1</code> while testing — disables the scheduler &amp; outbound SMS so nothing actually sends.</dd>
+  </dl>
+  <div class="tip"><b>Local-only testing?</b> Set <code>ADMIN_KEY</code> + <code>ANTHROPIC_API_KEY</code> + <code>DATABASE_URL</code> + <code>DEV_MODE=1</code>. You can build variants, run the playground simulator, and design conversations without ever wiring up GHL or sending real texts.</div>
+</div>
+
+<div class="btn-row">
+  <a class="btn" href="/">&larr; Back to landing</a>
+  ${showSecretSteps ? '' : '<a class="btn btn-primary" href="/admin?key=' + (reason === 'wrong_key' ? '' : '') + '">I added the key — try again</a>'}
+</div>
+
+<div class="foot">White-Label SMS Sales Engine &middot; <a href="/">home</a></div>
+</div></body></html>`;
 }

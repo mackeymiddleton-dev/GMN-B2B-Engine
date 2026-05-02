@@ -59,7 +59,21 @@ ul.bullets{margin:8px 0 0 20px;color:#475569;font-size:14.5px;line-height:1.8}
 
   <div class="cta-row">
     <a class="btn btn-primary" href="/admin">Open the Admin &rarr;</a>
-    <a class="btn btn-secondary" href="#how-it-works">How it works</a>
+    <a class="btn btn-secondary" href="#first-run">First time here?</a>
+  </div>
+
+  <div class="panel" id="first-run" style="border:2px solid #fde68a;background:linear-gradient(180deg,#fffbeb 0%,#ffffff 100%)">
+    <h2>First time? Two minutes to go live.</h2>
+    <p>Just imported this from GitHub into Replit? You need to set a few secrets before the engine works. Open <strong>Tools &rarr; Secrets</strong> in your Replit workspace and add:</p>
+    <ol style="margin:14px 0 0 22px;color:#0f172a;font-size:14.5px;line-height:1.95">
+      <li><strong>ADMIN_KEY</strong> — the password that protects your dashboard. Pick any long random string. <em>Required.</em></li>
+      <li><strong>ANTHROPIC_API_KEY</strong> — get one at <code>console.anthropic.com</code>. Powers all AI replies. <em>Required.</em></li>
+      <li><strong>DATABASE_URL</strong> — Replit gives you a free Postgres under <strong>Tools &rarr; Database</strong>; copy its connection string here. <em>Required.</em></li>
+      <li><strong>GHL_API_KEY</strong> + <strong>GHL_LOCATION_ID</strong> — your GoHighLevel sub-account credentials. <em>Required for live SMS.</em></li>
+      <li><strong>GOOGLE_PLACES_KEY</strong> — enables business lookup &amp; visibility scans. <em>Optional but recommended.</em></li>
+      <li><strong>DEV_MODE</strong> set to <code>1</code> — turn this on while you build &amp; test, so nothing accidentally sends real texts. <em>Optional.</em></li>
+    </ol>
+    <div class="note" style="margin-top:18px"><strong>What "ADMIN_KEY" actually does:</strong> the admin URLs need <code>?key=YOUR_ADMIN_KEY</code> appended (e.g. <code>/admin?key=k9_x4vQ-8sB2</code>). It's a single shared password — invent it, save it as a Replit Secret, then use it in every admin link. If you click "Open the Admin" without setting it first, you'll land on a guided setup page that walks you through it.</div>
   </div>
 
   <div class="panel" id="how-it-works">
@@ -85,7 +99,7 @@ ul.bullets{margin:8px 0 0 20px;color:#475569;font-size:14.5px;line-height:1.8}
       <div class="ex">Law firms</div>
       <div class="ex">Home services</div>
     </div>
-    <div class="note"><strong>Heads up:</strong> the Google Places + DataForSEO integrations and the GoHighLevel webhooks need API keys. Set them as environment variables (<code>GOOGLE_PLACES_KEY</code>, <code>DATAFORSEO_LOGIN</code>, <code>DATAFORSEO_PASSWORD</code>, <code>GHL_API_KEY</code>, <code>ANTHROPIC_API_KEY</code>, <code>ADMIN_KEY</code>). The admin URL requires <code>?key=YOUR_ADMIN_KEY</code>.</p></div>
+    <div class="note"><strong>API keys needed:</strong> see the "First time here?" section above for the full setup checklist.</div>
   </div>
 
   <div class="panel">
