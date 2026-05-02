@@ -1,0 +1,35 @@
+#113 - Variant Builder — Backend Data Model & Compiler
+What & Why
+Right now variants are stored as raw text blobs with [STEP:N], [BOOKED], [DECLINED], and [PRACTICE_DETECTED:...] markers embedded by hand. This makes it impossible to build a visual editor. This task introduces a structured variant format — an array of typed steps stored as JSON — and a compiler that turns that structure into the exact prompt text (with all required markers and rules) that the server and Claude need. It also exposes REST endpoints so the UI (next task) can create, read, update, and delete variants.
+
+Done looks like
+A new structuredVariants section exists in data/prompts.json where variants are stored as a JSON array of steps rather than raw text.
+A compileVariant() function produces a valid prompt string from a structured variant — including the shared output-format rules, [STEP:N] numbering, the [PRACTICE_DETECTED:...] instruction where needed, [BOOKED]/[DECLINED] markers on terminal steps, and the VSL URL on VSL-send steps.
+Four admin API endpoints exist and are auth-gated:
+GET /admin/api/structured-variants — list all structured variants
+POST /admin/api/structured-variants — create a new variant
+PUT /admin/api/structured-variants/:id — update an existing variant
+DELETE /admin/api/structured-variants/:id — delete a variant
+Compiled variants from the new system are wired into the existing variant-dispatch logic, so contacts assigned to a newly-created variant letter get the compiled prompt when the AI replies.
+Existing hard-coded variant text in config.js / data/prompts.json is left untouched — the new system runs alongside it, and the user will manually re-enter their variants into the new builder.
+Out of scope
+The visual admin UI (next task)
+Branching / Variant-E-style multi-path flows (linear step chains only)
+Auto-migrating existing raw prompt text into structured steps
+Steps
+Define the step schema — A step has a type (text, practice_detection, or vsl_send), an optional text field (for text steps), and an optional terminal field (null, booked, or declined). A variant has an id, a name, and an ordered steps array. Document the schema in a comment at the top of the relevant file.
+
+Build the compiler — Write compileVariant(variant) that assembles the full prompt string: prepends the shared output-format and marker rules, iterates steps assigning [STEP:N] numbers, injects the [PRACTICE_DETECTED:...] instruction for practice_detection steps, appends the VSL URL for vsl_send steps, and appends [BOOKED] or [DECLINED] to any step with a terminal value.
+
+Persist structured variants — Load and save the structuredVariants array from/to data/prompts.json using the same read/write helpers already in place for other prompt data.
+
+Add REST endpoints — Implement the four CRUD endpoints in server.js, auth-gated with the existing admin key check. Each write operation reserialises data/prompts.json. Return the full updated list on every write.
+
+Wire into variant dispatch — In the conversation handler, when selecting which prompt to send to Claude, check if the contact's assigned variant letter matches a structured variant's id. If so, use compileVariant() output instead of the raw text fallback. Fall through to the existing raw text if no structured variant matches.
+
+Relevant files
+server.js
+config.js
+prompts.js
+data/prompts.json
+conversations.js

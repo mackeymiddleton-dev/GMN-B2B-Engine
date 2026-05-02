@@ -1,0 +1,35 @@
+#114 - Variant Builder — Admin UI
+What & Why
+Gives the admin a visual interface to create and edit conversation variants without touching raw prompt text. Variants are built as an ordered list of typed steps, with special steps for Practice Detection and VSL Send, and a terminal-state toggle on the final step for Booked/Declined. Follows the same visual style as the existing prompt editor.
+
+Done looks like
+A new page exists at /admin/variants (auth-gated), accessible from the admin nav.
+The page shows a list of all existing structured variants with an edit (pen) button and a delete button per variant, plus a "New Variant" button.
+Clicking edit or new opens the variant editor inline (or as a panel), which shows:
+A variant name field at the top.
+An ordered list of step cards. Each card shows its step type and, for text steps, an editable textarea for the message copy.
+practice_detection and vsl_send steps show a labelled badge instead of a textarea (their behaviour is fixed).
+A + button to add a new step, with a small menu to choose the type (Text, Practice Detection, VSL Send).
+Up/Down arrow buttons on each step to reorder.
+A delete button on each step.
+A "Terminal state" dropdown on each step (None / Booked / Declined) — relevant for marking the final step.
+A Save button that calls the backend API and returns to the variant list.
+A read-only "Shared System Rules" section at the bottom of the page explains that the output-format rules and marker protocol are automatically injected by the compiler — with a link to the existing prompt editor for editing them.
+Out of scope
+Branching / multi-path steps (Variant E style)
+Drag-and-drop reordering (up/down arrows are sufficient)
+Variant A/B test assignment logic (that's handled elsewhere)
+Steps
+Add the page route and nav link — Register GET /admin/variants in server.js with the existing admin auth pattern. Add a link to it in the admin nav alongside the existing prompt editor and dashboard links.
+
+Build the variant list view — Render the list of structured variants returned by GET /admin/api/structured-variants. Each row shows the variant name, an edit pen button, and a delete button (with a confirmation prompt before delete).
+
+Build the step editor — Render an inline editor panel when creating or editing a variant. Implement add-step (with type menu), reorder (up/down), delete-step, and the terminal-state dropdown per step. text steps get a textarea; practice_detection and vsl_send get a descriptive badge explaining what they do.
+
+Wire save and delete to the API — On save, call POST or PUT against the structured-variants endpoints and refresh the variant list. On delete, call DELETE and remove the row. Show a simple success/error message inline.
+
+Add the shared rules info section — At the bottom of the page, render a collapsible info box (using the existing makeCollapsibleSection pattern) that explains the markers the compiler injects automatically, with a link to /admin/prompts for editing the shared rules.
+
+Relevant files
+server.js
+data/prompts.json
