@@ -7352,7 +7352,7 @@ input:focus,textarea:focus{border-color:#0ea56f;box-shadow:0 0 0 3px rgba(16,185
 <a class="back-link" href="/admin?key=${adminKey}">&larr; Back to Dashboard</a>
 <div class="logo">White-Label SMS Engine</div>
 <h1>Industry Setup</h1>
-<p class="subtitle">Tell the AI who it's texting and what your product does. Every prompt in the system references these values via <code style="background:#f1f5f9;padding:2px 6px;border-radius:5px;font-size:12px">{{tokens}}</code>, so changing them here updates the entire engine instantly.</p>
+<p class="subtitle">This is the AI's briefing. Before every message it sends, it reads all of this — your brand, your audience, your product, the pain points you solve, and the outcomes you deliver. Fill it in once and every conversation reflects it instantly.</p>
 
 <div class="card">
   <h2>Quick start: pick an example to pre-fill</h2>
@@ -7428,14 +7428,9 @@ input:focus,textarea:focus{border-color:#0ea56f;box-shadow:0 0 0 3px rgba(16,185
     <textarea id="valueProps" placeholder="- 30+ recovered appointments per month from dormant lists&#10;- 12% reply rate on automated outreach&#10;- New 5-star reviews on autopilot"></textarea>
   </div>
   <div class="field">
-    <label>Final video / booking URL</label>
-    <div class="hint">Where the conversation hands off (VSL, Calendly, demo). Token: {{vslUrl}}</div>
-    <input type="url" id="vslUrl" placeholder="https://yourbrand.com/demo">
-  </div>
-  <div class="field">
     <label>Extra context (optional)</label>
-    <div class="hint">Anything else the AI should know — competitors, jargon, do-not-mention list. Token: {{extraContext}}</div>
-    <textarea id="extraContext" placeholder=""></textarea>
+    <div class="hint">Anything else the AI should know — competitors, terms to avoid, jargon your audience uses, objection handling notes.</div>
+    <textarea id="extraContext" placeholder="e.g. Never mention our competitor HealthFirst. Prospects often say they already have a system — handle by asking what it does for them."></textarea>
   </div>
 </form>
 
@@ -7449,15 +7444,15 @@ input:focus,textarea:focus{border-color:#0ea56f;box-shadow:0 0 0 3px rgba(16,185
 
 <script>
 const ADMIN_KEY = ${JSON.stringify(adminKey)};
-const FIELDS = ['brandName','brandPersona','industryName','audienceDescriptor','businessNoun','customerNoun','productDescription','painPoints','valueProps','vslUrl','extraContext'];
+const FIELDS = ['brandName','brandPersona','industryName','audienceDescriptor','businessNoun','customerNoun','productDescription','painPoints','valueProps','extraContext'];
 const initial = ${safe};
 FIELDS.forEach(f => { const el = document.getElementById(f); if (el && initial[f] != null) el.value = initial[f]; });
 
 const EXAMPLES = {
-  dental: {brandName:'',brandPersona:'',industryName:'dental',audienceDescriptor:'dental practice owners',businessNoun:'practice',customerNoun:'patient',productDescription:'We run automated SMS campaigns that wake up dormant patient lists, fill empty appointment slots, and stop nearby practices from outranking you on Google.',painPoints:'- Empty chairs cost $200+ each\\n- Patients drift to the practice with more Google reviews\\n- Front desk forgets to follow up on unscheduled treatment',valueProps:'- 30+ recovered appointments per month\\n- New 5-star reviews on autopilot\\n- Dormant patients reactivated without staff effort',vslUrl:'',extraContext:''},
-  restaurant: {brandName:'',brandPersona:'',industryName:'restaurant',audienceDescriptor:'independent restaurant owners',businessNoun:'restaurant',customerNoun:'guest',productDescription:'We run AI text campaigns that bring back lapsed regulars, fill slow weeknights, and grow Google review counts faster than the chain across the street.',painPoints:'- Slow Tuesdays / Wednesdays cut margin in half\\n- Regulars vanish after 60 days and never come back\\n- Review counts trail the franchise nearby',valueProps:'- 20–40 reactivated regulars per month\\n- Slow-night covers up 15–25%\\n- Steady stream of new 5-star Google reviews',vslUrl:'',extraContext:''},
-  realestate: {brandName:'',brandPersona:'',industryName:'real estate',audienceDescriptor:'residential real estate agents',businessNoun:'team',customerNoun:'client',productDescription:'We text past leads on your behalf so listings get viewed, dormant buyers get re-engaged, and seller appointments fill your calendar.',painPoints:'- Old leads sit cold and never get a follow-up text\\n- Open houses are under-attended\\n- Competing agents are top of mind, you are not',valueProps:'- 5–10 reactivated buyer/seller convos per month\\n- Open-house RSVPs without manual texting\\n- Past clients refer you because you stay in front of them',vslUrl:'',extraContext:''},
-  gym: {brandName:'',brandPersona:'',industryName:'fitness',audienceDescriptor:'gym and studio owners',businessNoun:'gym',customerNoun:'member',productDescription:'We text former and at-risk members to re-enroll them, plus run new-lead nurture so trial sign-ups actually convert into paying members.',painPoints:'- Dropped members never come back\\n- Trial-to-paid conversion stalls below 30%\\n- Front desk has no time to follow up',valueProps:'- 15–25 reactivated members per month\\n- Trial conversion lifted to 50%+\\n- Hands-off lead nurture',vslUrl:'',extraContext:''},
+  dental: {brandName:'',brandPersona:'',industryName:'dental',audienceDescriptor:'dental practice owners',businessNoun:'practice',customerNoun:'patient',productDescription:'We run automated SMS campaigns that wake up dormant patient lists, fill empty appointment slots, and stop nearby practices from outranking you on Google.',painPoints:'- Empty chairs cost $200+ each\n- Patients drift to the practice with more Google reviews\n- Front desk forgets to follow up on unscheduled treatment',valueProps:'- 30+ recovered appointments per month\n- New 5-star reviews on autopilot\n- Dormant patients reactivated without staff effort',extraContext:''},
+  restaurant: {brandName:'',brandPersona:'',industryName:'restaurant',audienceDescriptor:'independent restaurant owners',businessNoun:'restaurant',customerNoun:'guest',productDescription:'We run AI text campaigns that bring back lapsed regulars, fill slow weeknights, and grow Google review counts faster than the chain across the street.',painPoints:'- Slow Tuesdays / Wednesdays cut margin in half\n- Regulars vanish after 60 days and never come back\n- Review counts trail the franchise nearby',valueProps:'- 20–40 reactivated regulars per month\n- Slow-night covers up 15–25%\n- Steady stream of new 5-star Google reviews',extraContext:''},
+  realestate: {brandName:'',brandPersona:'',industryName:'real estate',audienceDescriptor:'residential real estate agents',businessNoun:'team',customerNoun:'client',productDescription:'We text past leads on your behalf so listings get viewed, dormant buyers get re-engaged, and seller appointments fill your calendar.',painPoints:'- Old leads sit cold and never get a follow-up text\n- Open houses are under-attended\n- Competing agents are top of mind, you are not',valueProps:'- 5–10 reactivated buyer/seller convos per month\n- Open-house RSVPs without manual texting\n- Past clients refer you because you stay in front of them',extraContext:''},
+  gym: {brandName:'',brandPersona:'',industryName:'fitness',audienceDescriptor:'gym and studio owners',businessNoun:'gym',customerNoun:'member',productDescription:'We text former and at-risk members to re-enroll them, plus run new-lead nurture so trial sign-ups actually convert into paying members.',painPoints:'- Dropped members never come back\n- Trial-to-paid conversion stalls below 30%\n- Front desk has no time to follow up',valueProps:'- 15–25 reactivated members per month\n- Trial conversion lifted to 50%+\n- Hands-off lead nurture',extraContext:''},
   clear: Object.fromEntries(FIELDS.map(f => [f, '']))
 };
 
@@ -7579,7 +7574,6 @@ h1{font-size:clamp(34px,5vw,50px);font-weight:900;text-align:center;margin-botto
       <div><code>{{businessNoun}}</code> — e.g. practice, restaurant, gym</div>
       <div><code>{{customerNoun}}</code> — e.g. patient, guest, member</div>
       <div><code>{{audienceDescriptor}}</code> — e.g. dental practice owners</div>
-      <div><code>{{vslUrl}}</code> — your video / booking link</div>
       <div><code>[first name]</code> — the prospect's first name</div>
     </div>
     <div style="margin-top:8px;font-size:12px;color:#64748b">Example: <em>"Hey [first name], I help {{audienceDescriptor}} fill empty {{businessNoun}} slots..."</em></div>
