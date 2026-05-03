@@ -152,7 +152,7 @@ const DEFAULTS = {
   // VSL (video sales letter) URL delivered in video link steps (12/32/52/72).
   // Override via VARIANT_E_VSL_URL env var OR by editing this in the admin
   // prompt editor. Replace the placeholder with the real video URL before going live.
-  'conversationPrompt.E.vslUrl': 'https://ampifyai.com/watch',
+  'conversationPrompt.E.vslUrl': '',
   'conversationPrompt.E.shared': `You are Sidney, an AI assistant for Ampify AI, texting audiology practice owners.
 
 CRITICAL OUTPUT RULE: Return ONLY the message text the prospect will receive. No labels, no preamble, no explanation, no markdown. Plain text only.
