@@ -5409,7 +5409,7 @@ async function loadBrain() {
           variantRows = \`
             <div style="margin-top:28px;border-top:1px solid rgba(203,213,225,.6);padding-top:20px">
               <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
-                <div style="font-size:12px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.1em">A/B/C/D Script Variant Performance</div>
+                <div style="font-size:12px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.1em">Script Variant Performance</div>
               </div>
               <div class="table-wrap"><table class="perf-table">
                 <thead><tr>
