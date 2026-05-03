@@ -155,7 +155,9 @@ function compileVariant(variant) {
     if (step.type === 'text') {
       body = `STEP ${n}:\nSend exactly:\n${(step.text || '').trim()}\n[STEP:${n}]`;
     } else if (step.type === 'practice_detection') {
-      body = `STEP ${n}:\n${PRACTICE_DETECTION_INSTRUCTION}\n[STEP:${n}]`;
+      const askMsg = (step.text || '').trim();
+      const askLine = askMsg ? `Send exactly:\n${askMsg}\n\nThen: ` : '';
+      body = `STEP ${n}:\n${askLine}${PRACTICE_DETECTION_INSTRUCTION}\n[STEP:${n}]`;
     } else if (step.type === 'vsl_send') {
       body = `STEP ${n} (VIDEO SEND — final delivery):\n${_vslLine(step, vslUrl)}\n[STEP:${n}]`;
     } else {

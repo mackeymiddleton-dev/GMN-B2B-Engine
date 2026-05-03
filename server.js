@@ -7564,7 +7564,27 @@ h1{font-size:clamp(34px,5vw,50px);font-weight:900;text-align:center;margin-botto
 <a class="back-link" href="/admin?key=${adminKey}">&larr; Back to Dashboard</a>
 <div class="logo">White-Label SMS Engine</div>
 <h1>Variant Builder</h1>
-<p class="subtitle">Build the conversation, step by step. Each variant is a complete script the AI runs from opener to handoff. Use {{tokens}} like <code style="background:#f1f5f9;padding:2px 6px;border-radius:5px;font-size:12px">{{brandName}}</code> or <code style="background:#f1f5f9;padding:2px 6px;border-radius:5px;font-size:12px">{{industryName}}</code> in step text — they're filled from <a href="/admin/setup?key=${adminKey}" style="color:#0ea56f">Industry Setup</a> at runtime.</p>
+<p class="subtitle">Build your conversation flow step by step. Each step is one message the AI sends, then it waits for the prospect to reply before moving on.</p>
+<details class="token-ref" style="max-width:860px;margin:-10px auto 22px;background:rgba(255,255,255,.82);border:1px solid rgba(203,213,225,.8);border-radius:14px;padding:14px 18px;cursor:pointer;font-size:13px;color:#334155">
+  <summary style="font-weight:700;color:#0f172a;list-style:none;display:flex;align-items:center;gap:8px">
+    <span style="background:linear-gradient(180deg,#28c48a,#0ea56f);color:#fff;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:800">?</span>
+    What are <code style="font-size:12px">{{tokens}}</code> and how do I use them?
+  </summary>
+  <div style="margin-top:10px;line-height:1.7;color:#475569">
+    Tokens are <strong>fill-in-the-blank placeholders</strong>. When the AI sends a message, any <code>{{token}}</code> in your step text gets automatically replaced with the values you set in <a href="/admin/setup?key=${adminKey}" style="color:#0ea56f;font-weight:600">Industry Setup</a>.
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 18px;margin-top:10px;font-size:12.5px">
+      <div><code>{{brandName}}</code> — your brand / company name</div>
+      <div><code>{{brandPersona}}</code> — the AI's first name (e.g. Morgan)</div>
+      <div><code>{{industryName}}</code> — the industry (e.g. dental, gym)</div>
+      <div><code>{{businessNoun}}</code> — e.g. practice, restaurant, gym</div>
+      <div><code>{{customerNoun}}</code> — e.g. patient, guest, member</div>
+      <div><code>{{audienceDescriptor}}</code> — e.g. dental practice owners</div>
+      <div><code>{{vslUrl}}</code> — your video / booking link</div>
+      <div><code>[first name]</code> — the prospect's first name</div>
+    </div>
+    <div style="margin-top:8px;font-size:12px;color:#64748b">Example: <em>"Hey [first name], I help {{audienceDescriptor}} fill empty {{businessNoun}} slots..."</em></div>
+  </div>
+</details>
 
 <div class="layout">
   <div class="card side">
@@ -7584,8 +7604,7 @@ h1{font-size:clamp(34px,5vw,50px);font-weight:900;text-align:center;margin-botto
       <div class="steps-list" id="stepsList"></div>
       <div class="add-row">
         <button class="btn" onclick="addStep('text')">+ Text Step</button>
-        <button class="btn" onclick="addStep('practice_detection')">+ Business Detection</button>
-        <button class="btn" onclick="addStep('vsl_send')">+ Video/CTA Send</button>
+        <button class="btn" onclick="addStep('practice_detection')">+ Ask for Business Name</button>
       </div>
       <div class="actions-bar">
         <span class="status" id="status"></span>
@@ -7681,26 +7700,29 @@ function renderSteps() {
     const num = i + 1;
     let body;
     if (s.type === 'text') {
-      body = '<textarea oninput="updateStep(' + i + ',\\'text\\',this.value)" placeholder="Message copy the AI sends. Use [first name] for the prospect name and {{tokens}} from Industry Setup.">' + escHtml(s.text || '') + '</textarea>';
+      body = '<textarea oninput="updateStep(' + i + ',\\'text\\',this.value)" placeholder="Type the message to send. Use [first name] for the prospect\'s name, or {{tokens}} like {{brandName}}, {{businessNoun}}, {{vslUrl}} — see the token reference above.">' + escHtml(s.text || '') + '</textarea>';
     } else if (s.type === 'practice_detection') {
-      body = '<div class="step-info">The AI sends a brief acknowledgment and silently emits <code>[PRACTICE_DETECTED:Name|Street|City]</code>. The system pauses the script, runs Google Maps + visibility research in the background, and resumes once data is ready.</div>';
+      body =
+        '<div class="step-info" style="margin-bottom:10px">' +
+          '<strong>What this does:</strong> The AI sends your message below asking for the business name and street. ' +
+          'When the prospect replies, the system automatically looks up the business on Google Maps, runs a visibility scan, and feeds that data to the AI before the next step.' +
+        '</div>' +
+        '<label style="font-size:12px;font-weight:700;color:#475569;display:block;margin-bottom:4px">Message asking for business name &amp; street:</label>' +
+        '<textarea oninput="updateStep(' + i + ',\\'text\\',this.value)" placeholder="e.g. \'What\'s the name of your {{businessNoun}} and what street is it on? I want to pull up your Google listing.\'">' + escHtml(s.text || '') + '</textarea>';
     } else if (s.type === 'vsl_send') {
-      body = '<textarea oninput="updateStep(' + i + ',\\'text\\',this.value)" placeholder="Optional: custom send copy. Leave blank to use a default. The {{vslUrl}} from Industry Setup is auto-appended if you do not include it.">' + escHtml(s.text || '') + '</textarea>';
+      body = '<textarea oninput="updateStep(' + i + ',\\'text\\',this.value)" placeholder="Message to send with your link. Include {{vslUrl}} where the link should appear, e.g. \'Check this out: {{vslUrl}}\'">' + escHtml(s.text || '') + '</textarea>';
     }
     const term = s.terminal || '';
+    const typeLabel = s.type === 'practice_detection' ? 'Ask for business name' : s.type === 'vsl_send' ? 'Text step' : 'Text step';
     return '<div class="step">' +
       '<div class="step-head">' +
         '<div class="step-num">' + num + '</div>' +
-        '<select onchange="updateStep(' + i + ',\\'type\\',this.value)">' +
-          '<option value="text"' + (s.type==='text'?' selected':'') + '>Text step</option>' +
-          '<option value="practice_detection"' + (s.type==='practice_detection'?' selected':'') + '>Business detection</option>' +
-          '<option value="vsl_send"' + (s.type==='vsl_send'?' selected':'') + '>Video / CTA send</option>' +
-        '</select>' +
-        '<select onchange="updateStep(' + i + ',\\'terminal\\',this.value||null)" title="Terminal marker">' +
-          '<option value=""' + (term===''?' selected':'') + '>(no terminal)</option>' +
-          '<option value="booked"' + (term==='booked'?' selected':'') + '>End: BOOKED</option>' +
-          '<option value="declined"' + (term==='declined'?' selected':'') + '>End: DECLINED</option>' +
-        '</select>' +
+        '<span style="font-size:12px;font-weight:700;color:#334155;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:5px 10px">' + escHtml(typeLabel) + '</span>' +
+        (s.type !== 'practice_detection' ?
+          '<select onchange="updateStep(' + i + ',\\'terminal\\',this.value||null)" title="Mark end of conversation" style="font-size:12px">' +
+            '<option value=""' + (term===''?' selected':'') + '>Conversation continues</option>' +
+            '<option value="booked"' + (term==='booked'?' selected':'') + '>✓ End — prospect booked</option>' +
+          '</select>' : '') +
         '<div class="step-spacer"></div>' +
         '<button class="step-iconbtn" onclick="moveStep(' + i + ',-1)" ' + (i===0?'disabled':'') + '>↑</button>' +
         '<button class="step-iconbtn" onclick="moveStep(' + i + ',1)" ' + (i===current.steps.length-1?'disabled':'') + '>↓</button>' +
