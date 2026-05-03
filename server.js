@@ -7849,7 +7849,7 @@ ${showSecretSteps ? `
 
 <div class="btn-row">
   <a class="btn" href="/">&larr; Back to landing</a>
-  ${showSecretSteps ? '' : '<a class="btn btn-primary" href="/admin?key=' + (reason === 'wrong_key' ? '' : '') + '">I added the key — try again</a>'}
+  ${showSecretSteps ? '' : '<a class="btn btn-primary" href="/admin">I added the key — try again &rarr;</a>'}
 </div>
 
 <div class="foot">White-Label SMS Sales Engine &middot; <a href="/">home</a></div>
