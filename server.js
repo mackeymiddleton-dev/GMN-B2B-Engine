@@ -3459,12 +3459,13 @@ function _extractPlaygroundMarkers(text, session) {
 
 const _PLAYGROUND_CUSTOM_PROMPT_MAX = 50_000;
 function _normalizePlaygroundVariant(variant, customPrompt) {
-  const v = (variant || 'A').toUpperCase();
+  const raw = String(variant || 'A').trim();
+  const v = raw.toUpperCase();
   const trimmedCustom = String(customPrompt || '').trim();
 
   // Per the task contract: when customPrompt is present and non-empty, use it
   // as the system prompt regardless of the variant field. variant === 'CUSTOM'
-  // requires a non-empty customPrompt; otherwise variant must be A/B/C.
+  // requires a non-empty customPrompt; otherwise variant must be a known id.
   if (trimmedCustom) {
     if (trimmedCustom.length > _PLAYGROUND_CUSTOM_PROMPT_MAX) {
       return { error: `customPrompt is too long (max ${_PLAYGROUND_CUSTOM_PROMPT_MAX} chars)` };
@@ -3472,9 +3473,21 @@ function _normalizePlaygroundVariant(variant, customPrompt) {
     return { variant: 'CUSTOM', customPrompt: trimmedCustom };
   }
   if (v === 'CUSTOM') return { error: 'customPrompt is required when variant is CUSTOM' };
-  const _validPlaygroundVariants = [...config.SCRIPTED_VARIANTS, 'E'];
-  if (!_validPlaygroundVariants.includes(v)) return { error: `variant must be one of: ${_validPlaygroundVariants.join(', ')}, or CUSTOM` };
-  return { variant: v };
+
+  // Legacy scripted variants always use single uppercase letters. Check them
+  // FIRST so existing callers passing 'a'/'b'/etc. continue to map to the
+  // legacy uppercase variant even if a structured variant happens to share a
+  // single-letter id. (Structured ids are conventionally multi-char like 'D1'.)
+  const _validLegacy = [...config.SCRIPTED_VARIANTS, 'E'];
+  if (_validLegacy.includes(v)) return { variant: v };
+
+  // Accept any structured variant id (case-preserved) built via the Variant
+  // Builder. An operator who builds 'D1' or 'restaurant' can test it directly.
+  if (variantBuilder.getVariant(raw)) return { variant: raw };
+
+  const structuredIds = variantBuilder.listVariants().map(x => x.id);
+  const allValid = [..._validLegacy, ...structuredIds];
+  return { error: `variant must be one of: ${allValid.length ? allValid.join(', ') : '(none configured)'}, or CUSTOM` };
 }
 
 function _calcPlaygroundCost(usage) {
@@ -3534,8 +3547,50 @@ app.post('/admin/playground/message', requireAdmin, async (req, res) => {
     }
     session.lastActivityAt = Date.now();
 
+    // Revalidate the session's stored variant on every turn — an operator may
+    // have deleted a structured variant in another tab while this session is
+    // mid-conversation. If so, fail loud rather than silently falling through
+    // to a default prompt inside _buildPlaygroundSystemPrompt.
+    if (session.variant && session.variant !== 'CUSTOM') {
+      const legacyOk = [...config.SCRIPTED_VARIANTS, 'E'].includes(session.variant);
+      const structuredOk = !!variantBuilder.getVariant(session.variant);
+      if (!legacyOk && !structuredOk) {
+        return res.status(409).json({
+          error: `Variant "${session.variant}" is no longer available (it may have been deleted). Reset the playground session and pick a current variant.`
+        });
+      }
+    }
+
     // Append user message to history
     session.messages.push({ role: 'user', content: message });
+
+    // ── TCPA opt-out: STOP/UNSUBSCRIBE/etc. always wins ──
+    // Mirrors live handleInbound, where carrier/keyword opt-outs are processed
+    // before any state-machine routing. Without this, a STOP arriving while
+    // confirmationPending is set would just re-prompt for yes/no.
+    if (optouts.isOptOutKeyword(message)) {
+      const fname = session.firstName || 'there';
+      const farewell = `You're all set, ${fname} — I've removed you from our list and you won't hear from us again. Take care!`;
+      session.confirmationPending = null;
+      session.awaitingRetryName = null;
+      session.currentStep = 4;
+      session.messages.push({ role: 'assistant', content: farewell });
+      return res.json({
+        ok: true,
+        reply: farewell,
+        raw: farewell,
+        markers: [{ type: 'STEP', value: 4 }, { type: 'DECLINED', value: true }],
+        extraMessages: [],
+        currentStep: session.currentStep,
+        variant: session.variant,
+        tokenUsage: { input: 0, output: 0 },
+        elapsedMs: 0,
+        estCost: 0,
+        scanStatus: session.scanStatus || null,
+        awaitingConfirmReply: false,
+        systemPromptPreview: '(intercepted: TCPA opt-out keyword)'
+      });
+    }
 
     // ── Production-parity confirmation state machine ──
     // When confirmationPending or awaitingRetryName is set, intercept the
