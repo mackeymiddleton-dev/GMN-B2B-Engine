@@ -277,12 +277,12 @@ function generateMockResults(practiceName, sessionId) {
       rank,
       topBusinesses: rank ? [
         { name: practiceName, rank, rating: 4.2 },
-        { name: 'Clear Hearing Center', rank: rank === 1 ? 2 : 1, rating: 4.8 },
-        { name: 'Bay Audiology', rank: 3, rating: 4.7 }
+        { name: 'Iron Tribe Fitness', rank: rank === 1 ? 2 : 1, rating: 4.8 },
+        { name: 'Anytime Fitness', rank: 3, rating: 4.7 }
       ] : [
-        { name: 'Clear Hearing Center', rank: 1, rating: 4.8 },
-        { name: 'Bay Audiology', rank: 2, rating: 4.7 },
-        { name: 'Advanced Hearing Solutions', rank: 3, rating: 4.5 }
+        { name: 'Iron Tribe Fitness', rank: 1, rating: 4.8 },
+        { name: 'Anytime Fitness', rank: 2, rating: 4.7 },
+        { name: 'Orangetheory', rank: 3, rating: 4.5 }
       ]
     };
   });

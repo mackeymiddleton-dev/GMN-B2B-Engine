@@ -1,14 +1,13 @@
 {
-  "name": "powered-up-lead-magnet",
+  "name": "gmn-engine",
   "version": "1.0.0",
-  "description": "Audiology sales demo tool with streaming AI chat",
+  "description": "GMN internal B2B sales engine — inbound nurture + outbound crew",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
     "db:init": "node scripts/init-database.js",
-    "prompts:push": "node scripts/prompts-sync-file-to-db.js",
-    "test:off-script": "node scripts/test-off-script-handlers.js"
+    "prompts:push": "node scripts/prompts-sync-file-to-db.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",

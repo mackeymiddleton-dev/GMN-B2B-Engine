@@ -7,7 +7,7 @@
 // The keyword / scanKeyword / competitorKeyword fields below are used by the
 // Google Maps + DataForSEO enrichment layer (scanner.js / research.js). Set
 // them to whatever search term identifies the businesses you're texting
-// (e.g. "audiologist", "dentist", "real estate agent", "restaurant").
+// (e.g. "gym", "fitness studio", "personal trainer studio").
 
 const PLACEHOLDER_PROMPT = `You are an AI sales assistant texting {{audienceDescriptor}} on behalf of {{brandName}}. You send the very first opener message yourself and run the discovery flow with the prospect from there.
 
@@ -43,9 +43,9 @@ If LIVE RESEARCH DATA or SCAN RESULTS appear below, use the real numbers. Never 
 module.exports = {
   // ─── Local-business search (Google Places / DataForSEO) ───────────────────
   // Whatever keyword identifies the businesses you're targeting on Google.
-  keyword:           'local business',
-  scanKeyword:       'local business',
-  competitorKeyword: 'local business',
+  keyword:           'gym',
+  scanKeyword:       'gym',
+  competitorKeyword: 'gym',
   scanRadius:        5,
   gridSize:          5,
   competitorRadius:  8000,

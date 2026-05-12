@@ -527,7 +527,7 @@ function formatEnrichmentContext(enrichment) {
     const reviewLines = enrichment.recentReviews
       .map(r => `- ${r.author}: "${r.text}"`)
       .join('\n');
-    parts.push(`RECENT GOOGLE REVIEWS (their actual patients, use names/quotes directly):\n${reviewLines}`);
+    parts.push(`RECENT GOOGLE REVIEWS (their actual members, use names/quotes directly):\n${reviewLines}`);
   }
 
   if (enrichment.competitorVelocityDelta) {

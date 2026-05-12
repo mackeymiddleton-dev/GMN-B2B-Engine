@@ -110,9 +110,7 @@ let processing = false;
 //   - Bridge      "Pulling up your Google Maps listing now." + [PRACTICE_DETECTED:…]
 //   - System      "Found X at Y — is that the right one?" (Google Places lookup)
 //   - Prospect    "yes" / "yep" (confirms the listing)
-//   - AI          next scripted step from the variant prompt
-//                  • Variant B → hearing-aid percentage question (Step 5)
-//                  • Variant A/C → data reveal / booking step
+//   - AI          next scripted step from the variant prompt (qualification → data reveal → booking)
 //   - Watcher     visibility follow-up if the scan finishes before the prospect
 //                 replies to the AI step (early-aborts past the data reveal)
 const pendingAiTrigger = new Map(); // contactId → setInterval handle (research poller)
@@ -266,7 +264,7 @@ async function sendScanVisibilityMessage(contactId, resolvedConvId, sr) {
   } else if (competitor) {
     msg = `One more thing — just ran your visibility scan. You're showing up in most of your area, but ${competitor} is still winning the searches further from your building.`;
   } else {
-    msg = `One more thing — just ran your visibility scan. There are gaps in your local search coverage — people looking for audiologists a few miles out aren't finding you.`;
+    msg = `One more thing — just ran your visibility scan. There are gaps in your local search coverage — people searching for a gym a few miles out are not finding you.`;
   }
 
   // Race guard: same SEND→PERSIST window as every other outbound flow.
@@ -3116,14 +3114,14 @@ function _playgroundIsNegative(text) {
 }
 
 function _playgroundSeedScanData(session) {
-  const name = session.practiceName || 'Your Practice';
+  const name = session.practiceName || 'Your Gym';
   const city = session.confirmationPending?.city || session.city || 'your area';
-  const competitorName = `${city.split(',')[0]} Hearing Center`;
+  const competitorName = `${city.split(',')[0]} Strength Co`;
   session.researchData = {
     practiceName: name,
     reviews: 27,
     rating: 4.6,
-    competitors: [competitorName, 'Premier Audiology', 'Beltone'],
+    competitors: [competitorName, 'Iron Tribe Fitness', 'Anytime Fitness'],
     competitorSummary: `${competitorName} has 4× your review count and ranks #1 in 14/15 nearby searches.`,
     prospectRank: 5
   };
@@ -3973,7 +3971,7 @@ async function takeFunnelSnapshot() {
 }
 
 app.listen(PORT, () => {
-  console.log(`Powered Up AI — GMB Message Generator running on port ${PORT}`);
+  console.log(`GMN Engine running on port ${PORT}`);
 
   // ── DB migrations (safe, idempotent) ──────────────────────────────────────
   _promptsPool.query(`ALTER TABLE contacts ADD COLUMN IF NOT EXISTS variant varchar(1)`)
@@ -4094,7 +4092,7 @@ body{background:#1a1a1a;color:#fff;font-family:system-ui,-apple-system,BlinkMacS
 <div id="stats-container">
   ${!scanResults ? '<div class="loading-msg">Scan in progress — check back in a moment.</div>' : ''}
 </div>
-<div class="footer">Powered by Powered Up AI</div>
+<div class="footer">Powered by GMN</div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 const grid=${gridJson},stats=${statsJson},centerLat=${lat},centerLng=${lng};
@@ -4130,7 +4128,7 @@ function buildAdminDashboardPage(adminKey) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Admin Dashboard — Powered Up AI</title>
+<title>Admin Dashboard — GMN Engine</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -4299,7 +4297,7 @@ ${DEV_MODE ? `<div style="position:fixed;top:0;left:0;right:0;z-index:9999;backg
 
 <div class="header">
   <div class="header-left">
-    <div class="logo">Powered Up AI</div>
+    <div class="logo">GMN Engine</div>
     <h1>Admin Dashboard</h1>
   </div>
   <div class="header-right">
@@ -4392,7 +4390,7 @@ ${DEV_MODE ? `<div style="position:fixed;top:0;left:0;right:0;z-index:9999;backg
     <div class="subpanel-title">Enrollment Sync</div>
     <div class="subpanel-desc">Pulls everyone with a specific GHL tag and registers any who aren't in the system yet. Does <strong style="color:#0f172a;font-weight:700">not</strong> send any messages — GHL's automation handles the intro. When contacts reply, the AI takes over automatically. Enter the exact tag name from GHL.</div>
     <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end">
-      <input id="sync-tag-input" type="text" placeholder="GHL tag name (e.g. Powered Up AI)" class="field-input" style="width:280px">
+      <input id="sync-tag-input" type="text" placeholder="GHL tag name (e.g. gmn-inbound)" class="field-input" style="width:280px">
       <button class="action-btn action-btn-primary" onclick="runEnrollmentSync()">Sync Now</button>
     </div>
     <div id="sync-status" style="font-size:13px;margin-top:10px;font-weight:600"></div>
@@ -5529,7 +5527,7 @@ function buildPromptEditorPage(adminKey, promptsList) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Prompt Editor — Powered Up AI</title>
+<title>Prompt Editor — GMN Engine</title>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
@@ -5652,7 +5650,7 @@ textarea:focus{border-color:#2dd4bf;box-shadow:0 0 0 4px rgba(45,212,191,.12)}
     <button class="modal-btn" onclick="closeModal()">OK</button>
   </div>
 </div>
-<div class="logo">Powered Up AI</div>
+<div class="logo">GMN Engine</div>
 <a href="/admin?key=${adminKey}" class="back-link">&larr; Back to Dashboard</a>
 <div class="page-header">
   <h1>Prompt Editor</h1>
@@ -6211,7 +6209,7 @@ function buildEnrollPage(adminKey) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Lead Enrollment — Powered Up AI</title>
+<title>Lead Enrollment — GMN Engine</title>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
@@ -6262,7 +6260,7 @@ tr:last-child td{border-bottom:none}
 </style>
 </head>
 <body>
-<div class="logo">Powered Up AI</div>
+<div class="logo">GMN Engine</div>
 <div style="text-align:center;max-width:1080px;margin:0 auto 36px">
   <h1>Lead Enrollment</h1>
   <p class="subtitle">Preview and enroll GHL contacts into the follow-up sequence.<br>Run a dry-run first to see what will happen, then click Run Enrollment to commit.</p>
@@ -6455,7 +6453,7 @@ function buildPlaygroundPage(adminKey) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Conversation Tester — Powered Up AI</title>
+<title>Conversation Tester — GMN Engine</title>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -6544,10 +6542,10 @@ h1{font-size:clamp(42px,7vw,74px);line-height:.95;font-weight:900;letter-spacing
 </head>
 <body>
 <div class="screen">
-<div class="logo">Powered Up AI</div>
+<div class="logo">GMN Engine</div>
 <div class="back"><a href="/admin?key=${adminKey}">&larr; Back to Dashboard</a></div>
 <div class="page-header">
-  <div class="badge">Built exclusively for audiology practices</div>
+  <div class="badge">GMN internal sales engine</div>
   <h1>Conversation Tester</h1>
   <p class="subtitle">Talk to the AI as a fake prospect. Pick a variant (A, B, or C) — or paste a Custom prompt — to compare them. Hit ▶ Start Conversation to have the AI open first, or just type a message yourself. Real Claude calls run, but nothing writes to the database, no SMS goes out, no follow-ups schedule.</p>
   <div class="hero-actions">
@@ -6980,7 +6978,7 @@ function buildIndustrySetupPage(adminKey, current) {
   return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Industry Setup — White-Label SMS Engine</title>
+<title>Industry Setup — GMN Engine</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
@@ -7013,7 +7011,7 @@ input:focus,textarea:focus{border-color:#0ea56f;box-shadow:0 0 0 3px rgba(16,185
 </style></head>
 <body>
 <a class="back-link" href="/admin?key=${adminKey}">&larr; Back to Dashboard</a>
-<div class="logo">White-Label SMS Engine</div>
+<div class="logo">GMN Engine</div>
 <h1>Industry Setup</h1>
 <p class="subtitle">This is the AI's briefing. Before every message it sends, it reads all of this — your brand, your audience, your product, the pain points you solve, and the outcomes you deliver. Fill it in once and every conversation reflects it instantly.</p>
 
@@ -7021,10 +7019,10 @@ input:focus,textarea:focus{border-color:#0ea56f;box-shadow:0 0 0 3px rgba(16,185
   <h2>Quick start: pick an example to pre-fill</h2>
   <div class="desc">These are starter scaffolds — edit anything before saving.</div>
   <div class="examples">
+    <button class="ex-chip" onclick="loadExample('gym')">Gyms / studios</button>
     <button class="ex-chip" onclick="loadExample('dental')">Dental practices</button>
     <button class="ex-chip" onclick="loadExample('restaurant')">Restaurants</button>
     <button class="ex-chip" onclick="loadExample('realestate')">Real estate</button>
-    <button class="ex-chip" onclick="loadExample('gym')">Gyms / studios</button>
     <button class="ex-chip" onclick="loadExample('clear')" style="color:#dc2626;border-color:#fecaca">Clear all</button>
   </div>
 </div>
@@ -7040,7 +7038,7 @@ input:focus,textarea:focus{border-color:#0ea56f;box-shadow:0 0 0 3px rgba(16,185
     <div class="field">
       <label>Persona (signature)</label>
       <div class="hint">The human first name the AI texts as. Token: {{brandPersona}}</div>
-      <input type="text" id="brandPersona" placeholder="e.g. Sidney">
+      <input type="text" id="brandPersona" placeholder="e.g. Josh">
     </div>
   </div>
 </form>
@@ -7051,24 +7049,24 @@ input:focus,textarea:focus{border-color:#0ea56f;box-shadow:0 0 0 3px rgba(16,185
     <div class="field">
       <label>Industry name <span style="color:#dc2626">*</span></label>
       <div class="hint">Lowercase noun the AI uses in conversation. Token: {{industryName}}</div>
-      <input type="text" id="industryName" placeholder="e.g. dental, restaurant, real estate">
+      <input type="text" id="industryName" placeholder="e.g. fitness, gym, studio">
     </div>
     <div class="field">
       <label>Audience descriptor <span style="color:#dc2626">*</span></label>
       <div class="hint">Who you're texting. Token: {{audienceDescriptor}}</div>
-      <input type="text" id="audienceDescriptor" placeholder="e.g. dental practice owners">
+      <input type="text" id="audienceDescriptor" placeholder="e.g. gym owners and fitness-clinic operators">
     </div>
   </div>
   <div class="row">
     <div class="field">
       <label>Business noun</label>
       <div class="hint">Word for their business. Token: {{businessNoun}}</div>
-      <input type="text" id="businessNoun" placeholder="e.g. practice, clinic, shop">
+      <input type="text" id="businessNoun" placeholder="e.g. gym, studio, facility">
     </div>
     <div class="field">
       <label>Customer noun</label>
       <div class="hint">Word for the people they serve. Token: {{customerNoun}}</div>
-      <input type="text" id="customerNoun" placeholder="e.g. patient, client, guest">
+      <input type="text" id="customerNoun" placeholder="e.g. member, client, guest">
     </div>
   </div>
 </form>
@@ -7078,17 +7076,17 @@ input:focus,textarea:focus{border-color:#0ea56f;box-shadow:0 0 0 3px rgba(16,185
   <div class="field">
     <label>What your product does</label>
     <div class="hint">2–4 sentences in plain language. Token: {{productDescription}}</div>
-    <textarea id="productDescription" placeholder="e.g. We run automated SMS campaigns that wake up your dormant patient list, fill empty appointment slots, and stop nearby competitors from outranking you on Google."></textarea>
+    <textarea id="productDescription" placeholder="e.g. We help gym owners grow membership with AI-powered SMS lead nurture and member referral systems."></textarea>
   </div>
   <div class="field">
     <label>Pain points your audience feels</label>
     <div class="hint">One per line. The AI references these when bridging off-script replies. Token: {{painPoints}}</div>
-    <textarea id="painPoints" placeholder="- Empty appointment slots cost hundreds of dollars each&#10;- Front desk forgets to follow up with no-shows&#10;- Reviews lag behind the competitor down the street"></textarea>
+    <textarea id="painPoints" placeholder="- Lead flow is unpredictable — slammed one month, empty pipeline the next&#10;- Dormant members sitting in your CRM that nobody has followed up with&#10;- No system for turning happy clients into a referral engine"></textarea>
   </div>
   <div class="field">
     <label>Outcomes you deliver</label>
     <div class="hint">One per line. Token: {{valueProps}}</div>
-    <textarea id="valueProps" placeholder="- 30+ recovered appointments per month from dormant lists&#10;- 12% reply rate on automated outreach&#10;- New 5-star reviews on autopilot"></textarea>
+    <textarea id="valueProps" placeholder="- AI lead nurture that texts every lead within seconds, 24/7&#10;- Dormant member reactivation that recovers 5-figure revenue from your CRM&#10;- Automated Google review collection that compounds month over month"></textarea>
   </div>
   <div class="field">
     <label>Extra context (optional)</label>
@@ -7115,7 +7113,7 @@ const EXAMPLES = {
   dental: {brandName:'',brandPersona:'',industryName:'dental',audienceDescriptor:'dental practice owners',businessNoun:'practice',customerNoun:'patient',productDescription:'We run automated SMS campaigns that wake up dormant patient lists, fill empty appointment slots, and stop nearby practices from outranking you on Google.',painPoints:'- Empty chairs cost $200+ each\\n- Patients drift to the practice with more Google reviews\\n- Front desk forgets to follow up on unscheduled treatment',valueProps:'- 30+ recovered appointments per month\\n- New 5-star reviews on autopilot\\n- Dormant patients reactivated without staff effort',extraContext:''},
   restaurant: {brandName:'',brandPersona:'',industryName:'restaurant',audienceDescriptor:'independent restaurant owners',businessNoun:'restaurant',customerNoun:'guest',productDescription:'We run AI text campaigns that bring back lapsed regulars, fill slow weeknights, and grow Google review counts faster than the chain across the street.',painPoints:'- Slow Tuesdays / Wednesdays cut margin in half\\n- Regulars vanish after 60 days and never come back\\n- Review counts trail the franchise nearby',valueProps:'- 20–40 reactivated regulars per month\\n- Slow-night covers up 15–25%\\n- Steady stream of new 5-star Google reviews',extraContext:''},
   realestate: {brandName:'',brandPersona:'',industryName:'real estate',audienceDescriptor:'residential real estate agents',businessNoun:'team',customerNoun:'client',productDescription:'We text past leads on your behalf so listings get viewed, dormant buyers get re-engaged, and seller appointments fill your calendar.',painPoints:'- Old leads sit cold and never get a follow-up text\\n- Open houses are under-attended\\n- Competing agents are top of mind, you are not',valueProps:'- 5–10 reactivated buyer/seller convos per month\\n- Open-house RSVPs without manual texting\\n- Past clients refer you because you stay in front of them',extraContext:''},
-  gym: {brandName:'',brandPersona:'',industryName:'fitness',audienceDescriptor:'gym and studio owners',businessNoun:'gym',customerNoun:'member',productDescription:'We text former and at-risk members to re-enroll them, plus run new-lead nurture so trial sign-ups actually convert into paying members.',painPoints:'- Dropped members never come back\\n- Trial-to-paid conversion stalls below 30%\\n- Front desk has no time to follow up',valueProps:'- 15–25 reactivated members per month\\n- Trial conversion lifted to 50%+\\n- Hands-off lead nurture',extraContext:''},
+  gym: {brandName:"Andy Gundlach's team",brandPersona:'Josh',industryName:'fitness',audienceDescriptor:'gym owners',businessNoun:'gym',customerNoun:'client',productDescription:'We are an agency that owns and operates 140+ gyms and studios. We sell gym owners the same AI-powered marketing, sales, and member-retention systems we run inside our own locations — as a done-for-you service with coaching.',painPoints:'- Lead flow is unpredictable — some months you are slammed with sign-ups, other months you are staring at an empty pipeline\\n- Dormant members sitting in your CRM that nobody has followed up with in months\\n- No real system for turning your happy clients into a referral engine\\n- No process for getting consistent Google reviews month after month\\n- Trainers and front-desk staff do not have a consistent sales process — every consultation feels different\\n- Drowning in admin work — you are doing marketing, sales, ops, coaching all yourself\\n- Classes running half-empty during certain time slots and you do not know how to fill them\\n- Local competition opening up and cutting into your member base\\n- Hard to compete with low-priced chains without dropping your own pricing',valueProps:'- AI-powered lead nurture that texts every lead within seconds and qualifies them 24/7 — no more leads going cold while you are coaching\\n- Dormant member reactivation campaigns proven to recover 5-figure revenue from your existing CRM (Whitney pulled $80K in 5 weeks)\\n- Member referral systems that turn your happy clients into a consistent growth channel\\n- Automated Google review collection that compounds month over month — without you ever asking\\n- Trainer and front-desk sales playbooks battle-tested across our own 140+ locations\\n- Done-for-you marketing campaigns — we run them, you focus on coaching and culture\\n- Real coaching from people who actually operate gyms, not theoretical agency consultants\\n- Proven scaling systems used to take operators from 2 to 11 locations and beyond (Brandon did it in 28 months with $4.7M in contracts)',extraContext:''},
   clear: Object.fromEntries(FIELDS.map(f => [f, '']))
 };
 
@@ -7157,7 +7155,7 @@ function buildVariantBuilderPage(adminKey) {
   return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Variant Builder — White-Label SMS Engine</title>
+<title>Variant Builder — GMN Engine</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -7220,7 +7218,7 @@ h1{font-size:clamp(34px,5vw,50px);font-weight:900;text-align:center;margin-botto
 </style></head>
 <body>
 <a class="back-link" href="/admin?key=${adminKey}">&larr; Back to Dashboard</a>
-<div class="logo">White-Label SMS Engine</div>
+<div class="logo">GMN Engine</div>
 <h1>Variant Builder</h1>
 <p class="subtitle">Build your conversation flow step by step. Each step is one message the AI sends, then it waits for the prospect to reply before moving on.</p>
 <details class="token-ref" style="max-width:860px;margin:-10px auto 22px;background:rgba(255,255,255,.82);border:1px solid rgba(203,213,225,.8);border-radius:14px;padding:14px 18px;cursor:pointer;font-size:13px;color:#334155">
@@ -7233,10 +7231,10 @@ h1{font-size:clamp(34px,5vw,50px);font-weight:900;text-align:center;margin-botto
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 18px;margin-top:10px;font-size:12.5px">
       <div><code>{{brandName}}</code> — your brand / company name</div>
       <div><code>{{brandPersona}}</code> — the AI's first name (e.g. Morgan)</div>
-      <div><code>{{industryName}}</code> — the industry (e.g. dental, gym)</div>
-      <div><code>{{businessNoun}}</code> — e.g. practice, restaurant, gym</div>
-      <div><code>{{customerNoun}}</code> — e.g. patient, guest, member</div>
-      <div><code>{{audienceDescriptor}}</code> — e.g. dental practice owners</div>
+      <div><code>{{industryName}}</code> — the industry (e.g. fitness, gym)</div>
+      <div><code>{{businessNoun}}</code> — e.g. gym, studio, facility</div>
+      <div><code>{{customerNoun}}</code> — e.g. member, client, guest</div>
+      <div><code>{{audienceDescriptor}}</code> — e.g. gym owners and fitness-clinic operators</div>
       <div><code>[first name]</code> — the prospect's first name</div>
     </div>
     <div style="margin-top:8px;font-size:12px;color:#64748b">Example: <em>"Hey [first name], I help {{audienceDescriptor}} fill empty {{businessNoun}} slots..."</em></div>
@@ -7488,7 +7486,7 @@ function buildSetupGuidePage(reason) {
   return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Setup — White-Label SMS Engine</title>
+<title>Setup — GMN Engine</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -7521,7 +7519,7 @@ code{font-family:'SF Mono',Consolas,monospace;font-size:12.5px;background:#f1f5f
 .foot a{color:#0ea56f;text-decoration:none}
 </style></head>
 <body><div class="wrap">
-<div class="eyebrow">White-Label SMS Engine</div>
+<div class="eyebrow">GMN Engine</div>
 <h1>${titles[reason]}</h1>
 <p class="intro">${intros[reason]}</p>
 
@@ -7571,6 +7569,6 @@ ${showSecretSteps ? `
   ${showSecretSteps ? '' : '<a class="btn btn-primary" href="/admin">I added the key — try again &rarr;</a>'}
 </div>
 
-<div class="foot">White-Label SMS Sales Engine &middot; <a href="/">home</a></div>
+<div class="foot">GMN Engine &middot; <a href="/">home</a></div>
 </div></body></html>`;
 }
