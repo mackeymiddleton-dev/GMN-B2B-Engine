@@ -50,12 +50,31 @@ function parseDate(val) {
   return isNaN(t) ? 0 : t;
 }
 
+// GHL appends "\nReply STOP to unsubscribe." to the FIRST outbound of every
+// new conversation as a TCPA compliance footer. When the conversation is
+// fetched back, that suffix used to make `isRealMessage` drop the entire
+// opener — losing the conversational context. NEVER drop a GHL message just
+// because its body contains a TCPA opt-out phrase: strip the suffix, preserve
+// the body. (Mirrors buildMessagesFromGhl in server.js — trap #10.)
+const TCPA_OPTOUT_SUFFIX = /[\s\.]*Reply\s+STOP\s+to\s+unsubscribe\.?\s*$/i;
+
+// Canonical message body: trims whitespace and, for outbound messages only,
+// strips the GHL-appended TCPA opt-out suffix. Use this everywhere a message
+// body is read so the suffix never leaks into transcripts or analysis.
+function messageText(m) {
+  let text = (m.body || m.message || '').trim();
+  if (!isInbound(m)) text = text.replace(TCPA_OPTOUT_SUFFIX, '').trim();
+  return text;
+}
+
 function isRealMessage(m) {
-  const text = (m.body || m.message || '').trim();
+  const text = messageText(m);
   if (!text) return false;
   if (/CRM ID:/i.test(text)) return false;
   if (/opportunity created/i.test(text)) return false;
-  if (/reply STOP to unsubscribe/i.test(text)) return false;
+  // Do NOT drop messages that merely CONTAIN the TCPA opt-out boilerplate —
+  // GHL appends it as a suffix to legitimate first outbounds. The suffix is
+  // stripped by messageText() above; the body is preserved.
   // Exclude outbound messages that failed to deliver — don't count them as
   // sent steps when analysing how far a conversation progressed.
   if (m.status === 'failed' && !isInbound(m)) return false;
@@ -72,7 +91,7 @@ async function claudeAnalyseConversation(ghlMessages, contactId) {
 
   const transcript = sorted.map(m => {
     const who  = isInbound(m) ? 'PROSPECT' : 'US';
-    const text = (m.body || m.message || '').trim();
+    const text = messageText(m);
     return `${who}: ${text}`;
   }).join('\n');
 
@@ -160,7 +179,7 @@ function heuristicAnalysis(ghlMessages) {
   const hasReplied       = inboundCount > 0;
   const lastReplyAfterUs = hasReplied && lastInTime > lastOutTime;
 
-  const allText = real.map(m => (m.body || m.message || '').toLowerCase()).join(' ');
+  const allText = real.map(m => messageText(m).toLowerCase()).join(' ');
   const usedCurrentScript =
     allText.includes('showing up on that map') ||
     allText.includes('percentage actually went through with it');
@@ -215,7 +234,7 @@ function formatExchanges(ghlMessages, convId) {
     parseDate(a.dateAdded || a.createdAt) - parseDate(b.dateAdded || b.createdAt)
   ).map(m => ({
     direction:      isInbound(m) ? 'inbound' : 'outbound',
-    body:           (m.body || m.message || '').trim(),
+    body:           messageText(m),
     step:           null,
     conversationId: convId || null,
     timestamp:      parseDate(m.dateAdded || m.createdAt) || Date.now()
