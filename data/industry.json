@@ -1,14 +1,12 @@
 {
-  "industryName": "dental",
-  "audienceDescriptor": "dental practices",
-  "businessNoun": "practice",
-  "customerNoun": "patient",
-  "brandName": "TestCo",
-  "brandPersona": "Sam",
-  "productDescription": "We text dormant patients on autopilot.",
-  "painPoints": "- empty chairs\n- low reviews",
-  "valueProps": "- 30+ recovered appts",
-  "vslUrl": "https://example.com/v",
-  "ctaLine": "",
-  "extraContext": ""
+  "industryName": "fitness",
+  "audienceDescriptor": "gym owners",
+  "businessNoun": "gym",
+  "customerNoun": "client",
+  "brandName": "Andy Gundlach's team",
+  "brandPersona": "Josh",
+  "productDescription": "We're an agency that owns and operates 140+ gyms and studios. We sell gym owners the same AI-powered marketing, sales, and member-retention systems we run inside our own locations — as a done-for-you service with coaching.",
+  "painPoints": "- Lead flow is unpredictable — some months you're slammed with sign-ups, other months you're staring at an empty pipeline\n- Dormant members sitting in your CRM that nobody's followed up with in months\n- No real system for turning your happy clients into a referral engine\n- No process for getting consistent Google reviews month after month\n- Trainers and front-desk staff don't have a consistent sales process — every consultation feels different\n- Drowning in admin work — you're doing marketing, sales, ops, coaching all yourself\n- Classes running half-empty during certain time slots and you don't know how to fill them\n- Local competition opening up and cutting into your member base\n- Hard to compete with low-priced chains without dropping your own pricing",
+  "valueProps": "- AI-powered lead nurture that texts every lead within seconds and qualifies them 24/7 — no more leads going cold while you're coaching\n- Dormant member reactivation campaigns proven to recover 5-figure revenue from your existing CRM (Whitney pulled $80K in 5 weeks)\n- Member referral systems that turn your happy clients into a consistent growth channel\n- Automated Google review collection that compounds month over month — without you ever asking\n- Trainer and front-desk sales playbooks battle-tested across our own 140+ locations\n- Done-for-you marketing campaigns — we run them, you focus on coaching and culture\n- Real coaching from people who actually operate gyms, not theoretical agency consultants\n- Proven scaling systems used to take operators from 2 to 11 locations and beyond (Brandon did it in 28 months with $4.7M in contracts)",
+  "vslUrl": "https://demo.gym-members-now.com/chatgpt5-bym"
 }
