@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
+    "db:init": "node scripts/init-database.js",
     "prompts:push": "node scripts/prompts-sync-file-to-db.js",
     "test:off-script": "node scripts/test-off-script-handlers.js"
   },
