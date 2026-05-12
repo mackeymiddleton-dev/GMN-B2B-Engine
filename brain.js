@@ -711,7 +711,7 @@ function runAnalysis() {
     if (m.repliedWithin48h) vByVariant[v].replied++;
     if (m.booked)           vByVariant[v].booked++;
   }
-  winning.variantStats = [...config.SCRIPTED_VARIANTS, 'E'].map(v => {
+  winning.variantStats = [...config.SCRIPTED_VARIANTS].map(v => {
     const s = vByVariant[v] || { sent: 0, replied: 0, booked: 0 };
     const contacts = vContactsByVariant[v]?.size || 0;
     return {
@@ -966,7 +966,7 @@ function getVariantStats() {
     if (m.booked)           byVariant[v].booked++;
   }
 
-  return [...config.SCRIPTED_VARIANTS, 'E'].map(v => {
+  return [...config.SCRIPTED_VARIANTS].map(v => {
     const s = byVariant[v] || { sent: 0, replied: 0, booked: 0 };
     const contacts = contactsByVariant[v]?.size || 0;
     return {
@@ -1058,7 +1058,7 @@ async function runLlmAnalysis(patterns) {
   // disabled it means the team already learned from it and turned it off, so
   // there is no value in asking the LLM to analyze it again.
   const enabledVariants = new Set(
-    [...config.SCRIPTED_VARIANTS, 'E'].filter(v =>
+    [...config.SCRIPTED_VARIANTS].filter(v =>
       prompts.get(`conversationPrompt.${v}.enabled`) === 'true'
     )
   );

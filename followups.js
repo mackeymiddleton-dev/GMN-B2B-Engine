@@ -323,8 +323,7 @@ function cancelContactJobs(contactId) {
     if (
       j.contactId === contactId &&
       j.status === 'pending' &&
-      !j.type.startsWith('email-') &&
-      j.type !== 'data-payload'  // data-payload self-cancels on booked/optout check
+      !j.type.startsWith('email-')
     ) {
       count++;
       cancelledIds.push(j.id);
@@ -335,7 +334,7 @@ function cancelContactJobs(contactId) {
   if (count > 0) {
     save(updated);
     _dbBulkUpdateStatus(cancelledIds, 'cancelled');
-    console.log(`[Followups] Cancelled ${count} pending SMS jobs for ${contactId} (email jobs and data-payload preserved)`);
+    console.log(`[Followups] Cancelled ${count} pending SMS jobs for ${contactId} (email jobs preserved)`);
   }
   return count;
 }
@@ -1177,105 +1176,6 @@ async function processHookOrNurture(job) {
   await sendFollowUp(job, contact, job.position);
 }
 
-// ─── Variant E Data Payload ────────────────────────────────────────────────────
-// Fires 15–20 minutes after the video link step for Variant E contacts.
-// Sends real scan data (competitor names, visibility gaps) as a delayed follow-up
-// framed as "I finished pulling your local data while you watched."
-// Skips silently if the contact has booked, opted out, or has no scan data.
-async function processDataPayload(job) {
-  const contact = conversations.get(job.contactId);
-  if (!contact) {
-    updateJob(job.id, { status: 'skipped', error: 'Contact not found' });
-    return;
-  }
-  if (contact.booked) {
-    updateJob(job.id, { status: 'cancelled', error: 'Already booked' });
-    console.log(`[DataPayload] Skipping ${job.contactId} — already booked`);
-    return;
-  }
-
-  if (spend.isAtLimit(job.contactId)) {
-    updateJob(job.id, { status: 'cancelled', error: 'API spend limit reached' });
-    return;
-  }
-
-  const firstName  = contact.firstName || 'there';
-  const practiceNameRaw = contact.practiceName || null;
-
-  const sr = contact.scanResults || null;
-  const rd = contact.researchData || null;
-
-  let msg;
-
-  if (sr && sr.topCompetitor?.name && practiceNameRaw) {
-    const competitor  = sr.topCompetitor.name;
-    const invisible   = sr.invisible ?? (sr.totalPoints - sr.visibleTop3) ?? null;
-
-    // Prefer review count from scan result; fall back to matching entry in researchData.competitors
-    let reviewCount = sr.topCompetitor.reviewCount || sr.topCompetitor.reviews || null;
-    if (!reviewCount && rd?.competitors?.length) {
-      const lowerName = competitor.toLowerCase();
-      const match = rd.competitors.find(c => {
-        const n = (c.name || c || '').toLowerCase();
-        return n && (lowerName.includes(n.split(' ')[0]) || n.includes(lowerName.split(' ')[0]));
-      });
-      reviewCount = match?.reviewCount || match?.reviews || match?.total_reviews || null;
-    }
-
-    const reviewPhrase = reviewCount && reviewCount > 0 ? ` (${reviewCount} reviews)` : '';
-    const gapPhrase    = invisible !== null && invisible > 0
-      ? `${competitor}${reviewPhrase} is showing up in ${invisible} spot${invisible !== 1 ? 's' : ''} where you're invisible`
-      : `${competitor}${reviewPhrase} is outranking you in local search`;
-    msg = `Hey ${firstName}, while you were watching that, I finished pulling your local data for ${practiceNameRaw}. It's a bit of a wake-up call — ${gapPhrase}. Does the video make sense in light of those numbers?`;
-  }
-
-  if (!msg) {
-    // No scan/research data available yet.
-    // Retry up to 3 times (2 min apart) before giving up — scan completes
-    // asynchronously and may finish after the initial 15–20 min delay elapses.
-    const MAX_RETRIES = 3;
-    const retriesSoFar = job.context?.retries ?? 0;
-    if (retriesSoFar < MAX_RETRIES) {
-      const retryDelay = 2 * 60 * 1000;
-      updateJob(job.id, {
-        sendAt: Date.now() + retryDelay,
-        status: 'pending',
-        context: { ...job.context, retries: retriesSoFar + 1 }
-      });
-      console.log(`[DataPayload] No scan data yet for ${job.contactId} — rescheduling (retry ${retriesSoFar + 1}/${MAX_RETRIES}) in 2 min`);
-    } else {
-      updateJob(job.id, { status: 'skipped', error: 'No scan data available after retries' });
-      console.log(`[DataPayload] Skipping ${job.contactId} — no scan data after ${MAX_RETRIES} retries`);
-    }
-    return;
-  }
-
-  const _lock = outboundLock.acquire(job.contactId);
-  try {
-    if (DEV_MODE) {
-      console.log(`[DataPayload][DEV MODE] Would send to ${job.contactId}: "${msg.slice(0, 120)}"`);
-      updateJob(job.id, { status: 'sent', sentAt: Date.now() });
-      return;
-    }
-    await ghl.sendMessage(job.contactId, msg);
-    conversations.addExchange(job.contactId, {
-      direction: 'outbound',
-      body: msg,
-      step: job.context?.videoStep ?? null,
-      type: 'data-payload',
-      variant: 'E'
-    });
-    brain.recordOutbound(job.contactId, msg, job.context?.videoStep ?? null, { variant: 'E' });
-    updateJob(job.id, { status: 'sent', sentAt: Date.now() });
-    console.log(`[DataPayload] Sent to ${job.contactId}: "${msg.slice(0, 80)}"`);
-  } catch (err) {
-    console.error(`[DataPayload] Failed for ${job.contactId}:`, err.message);
-    updateJob(job.id, { status: 'skipped', error: err.message });
-  } finally {
-    _lock.release();
-  }
-}
-
 async function processJob(job) {
   if (await optouts.isOptedOut(job.contactId)) {
     console.log(`[Followups] Contact ${job.contactId} is opted out — cancelling job ${job.id}`);
@@ -1309,8 +1209,6 @@ async function processJob(job) {
     await processSilenceCheck(job);
   } else if (job.type === 'email-hook' || job.type === 'email-nurture') {
     await processEmailJob(job);
-  } else if (job.type === 'data-payload') {
-    await processDataPayload(job);
   } else {
     await processHookOrNurture(job);
   }

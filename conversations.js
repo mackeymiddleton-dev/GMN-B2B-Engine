@@ -107,11 +107,7 @@ function _dbUpsertContact(record) {
     awaitingRetryName:   record.awaitingRetryName   || false,
     practiceName:        record.practiceName        || null,
     practiceStreet:      record.practiceStreet      || null,
-    practiceCity:        record.practiceCity        || null,
-    // Variant E branch lock — once set, server.js's buildVariantESystemPrompt()
-    // selects the branch script by this letter instead of currentStep, so an
-    // out-of-sequence step marker can't flip the active branch mid-conversation.
-    variantEBranch:      record.variantEBranch      || null
+    practiceCity:        record.practiceCity        || null
   };
   pool.query(
     `INSERT INTO contacts

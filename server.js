@@ -555,53 +555,6 @@ async function notifySid(text) {
   }
 }
 
-// ─── Variant E Prompt Builder ──────────────────────────────────────────────────
-// Steps 0-9: shared + opening + all four branches (routing turn needs exact copy).
-// Steps 10+: shared + active branch only.
-//
-// Branch lock: once a contact has entered a branch (first step >= 10 marker
-// detected), the branch letter is stamped onto the contact as `variantEBranch`
-// and passed in here. When set, branchLock takes precedence over currentStep
-// for branch selection. This guards against an out-of-sequence step marker
-// (retry, hallucination, AI emitting [STEP:29] after [STEP:30]) flipping the
-// active branch script mid-conversation, which would otherwise feed the AI
-// the wrong script copy on the next inbound.
-function buildVariantESystemPrompt(currentStep, branchLock) {
-  const shared  = prompts.get('conversationPrompt.E.shared')  || '';
-  const opening = prompts.get('conversationPrompt.E.opening') || '';
-  const branchA = prompts.get('conversationPrompt.E.branchA') || '';
-  const branchB = prompts.get('conversationPrompt.E.branchB') || '';
-  const branchC = prompts.get('conversationPrompt.E.branchC') || '';
-  const branchD = prompts.get('conversationPrompt.E.branchD') || '';
-
-  if (branchLock === 'A') return [shared, branchA].filter(Boolean).join('\n\n');
-  if (branchLock === 'B') return [shared, branchB].filter(Boolean).join('\n\n');
-  if (branchLock === 'C') return [shared, branchC].filter(Boolean).join('\n\n');
-  if (branchLock === 'D') return [shared, branchD].filter(Boolean).join('\n\n');
-
-  if (currentStep < 10) {
-    return [shared, opening, branchA, branchB, branchC, branchD].filter(Boolean).join('\n\n');
-  } else if (currentStep <= 29) {
-    return [shared, branchA].filter(Boolean).join('\n\n');
-  } else if (currentStep <= 49) {
-    return [shared, branchB].filter(Boolean).join('\n\n');
-  } else if (currentStep <= 69) {
-    return [shared, branchC].filter(Boolean).join('\n\n');
-  } else {
-    return [shared, branchD].filter(Boolean).join('\n\n');
-  }
-}
-
-// Map a step number to its branch letter. Returns null for opening steps (< 10).
-// Kept in sync with buildVariantESystemPrompt's currentStep ranges above.
-function _variantEBranchForStep(step) {
-  if (typeof step !== 'number' || step < 10) return null;
-  if (step <= 29) return 'A';
-  if (step <= 49) return 'B';
-  if (step <= 69) return 'C';
-  return 'D';
-}
-
 async function generateAndSendOpener(contactId) {
   if (_openerInProgress.has(contactId)) {
     console.log(`[Opener] Skipping ${contactId} — opener generation already in progress`);
@@ -642,12 +595,7 @@ async function generateAndSendOpener(contactId) {
     // Build system prompt — same shape as handleInbound but with no live
     // research/scan data yet (none exists at enrollment time) and CURRENT STEP=0.
     const variant = contact.variant || null;
-    let systemContent;
-    if (variant === 'E' && !variantBuilder.getVariant('E')) {
-      systemContent = buildVariantESystemPrompt(0);
-    } else {
-      systemContent = resolveVariantPrompt(variant);
-    }
+    let systemContent = resolveVariantPrompt(variant);
     if (contact.firstName) systemContent += `\n\nPROSPECT FIRST NAME: ${contact.firstName}`;
     if (contact.city)      systemContent += `\n\nPROSPECT CITY: ${contact.city}`;
     systemContent += `\n\nCURRENT STEP: 0 (continue from here)`;
@@ -674,7 +622,7 @@ async function generateAndSendOpener(contactId) {
 
     // Strip any hidden markers before sending — the prospect must never see them.
     // Use the LAST [STEP:N] marker in case Claude emits multiple step markers
-    // in one turn (e.g. Variant E Steps 2+3 sent together).
+    // in one turn (e.g. Variant A/B Steps 2+3 sent together).
     const allOpenerStepMatches = [...openerText.matchAll(/\[STEP:(\d+)\]/gi)];
     const detectedStep = allOpenerStepMatches.length > 0
       ? parseInt(allOpenerStepMatches[allOpenerStepMatches.length - 1][1], 10) : null;
@@ -1302,16 +1250,9 @@ async function generateAndSendAiReply(contactId, resolvedConvId, opts = {}) {
   }
 
   // Build system prompt with live data + winning patterns. Pick variant-specific
-  // prompt (A/B/C/D/E); fall back to the base prompt if no variant is assigned.
-  // Variant E uses a modular composition: shared rules + branch script selected
-  // by currentStep. All other variants use a single flat prompt key.
+  // prompt; fall back to the base prompt if no variant is assigned.
   const contactVariant = fresh?.variant || null;
-  let systemContent;
-  if (contactVariant === 'E' && !variantBuilder.getVariant('E')) {
-    systemContent = buildVariantESystemPrompt(fresh?.currentStep ?? 0, fresh?.variantEBranch || null);
-  } else {
-    systemContent = resolveVariantPrompt(contactVariant);
-  }
+  let systemContent = resolveVariantPrompt(contactVariant);
 
   if (resolvedFirstName || fresh?.firstName) {
     systemContent += `\n\nPROSPECT FIRST NAME: ${resolvedFirstName || fresh?.firstName}`;
@@ -1411,10 +1352,7 @@ async function generateAndSendAiReply(contactId, resolvedConvId, opts = {}) {
     // (short, specific follow-up question NOT restating the scripted text) while blocking
     // the verbatim re-ask pattern.
     let isSameStepReask = false;
-    // Variant E step 3 is the routing turn: one legitimate [STEP:3] clarifying question
-    // is allowed after an ambiguous menu reply. The hard-cap (3-in-a-row) still applies.
-    const isVariantEStep3Clarifier = contactVariant === 'E' && _newStepPre === 3;
-    if (!isHardCapViolation && !isVariantEStep3Clarifier && _newStepPre !== null && recentOutbounds.length > 0) {
+    if (!isHardCapViolation && _newStepPre !== null && recentOutbounds.length > 0) {
       const _lastStep = recentOutbounds[recentOutbounds.length - 1].step;
       if (_lastStep !== null && _lastStep !== undefined && _lastStep === _newStepPre) {
         isSameStepReask = true;
@@ -1456,7 +1394,7 @@ async function generateAndSendAiReply(contactId, resolvedConvId, opts = {}) {
 
   // [STEP:N] — track current step.
   // Use the LAST marker in case Claude emits multiple step markers in one turn
-  // (e.g. Variant E Steps 2+3 sent together). Using the last marker ensures
+  // (e.g. Variant A/B Steps 2+3 sent together). Using the last marker ensures
   // currentStep lands on the final state of the turn (e.g. step 3, not step 2).
   const allStepMatches = [...reply.matchAll(/\[STEP:(\d+)\]/gi)];
   const detectedStep = allStepMatches.length > 0
@@ -1489,44 +1427,24 @@ async function generateAndSendAiReply(contactId, resolvedConvId, opts = {}) {
           const confirmName = topResult.name || practiceName;
           const confirmAddress = topResult.formatted_address || topResult.vicinity || '';
 
-          if (contactVariant === 'E') {
-            // Variant E: same confirmation flow as all other variants.
-            // After the prospect says "yes", handleConfirmationReply fires
-            // startResearchAndScan + scheduleAiResponseAfterResearch, which calls
-            // Claude again to generate the video link step cleanly.
-            // Defensive truncation: if the AI bundled [Link] into the same reply as
-            // [PRACTICE_DETECTED], strip everything from the second paragraph onwards
-            // so only the bridge sentence ("Got it, [name]... Checking now...") is sent.
-            // Claude re-generates the video step after confirmation.
-            if (reply.includes('[Link]')) {
-              reply = (reply.split(/\n\n/)[0] || reply).trim();
-              console.log(`[AiGen] Variant E: stripped video link from pre-confirmation reply for ${contactId}`);
-            }
-            conversations.update(contactId, {
-              confirmationPending: { placeId: topResult.place_id, name: confirmName, address: confirmAddress, city: practiceCity }
-            });
-            confirmationMsg = `Found ${confirmName} at ${confirmAddress} — is that the right one?`;
-            console.log(`[AiGen] Variant E: address confirmation queued for ${contactId}: ${confirmName}`);
-          } else {
-            conversations.update(contactId, {
-              confirmationPending: { placeId: topResult.place_id, name: confirmName, address: confirmAddress, city: practiceCity }
-            });
-            confirmationMsg = `Found ${confirmName} at ${confirmAddress} — is that the right one?`;
-            console.log(`[AiGen] Address confirmation queued for ${contactId}: ${confirmName}`);
-          }
+          conversations.update(contactId, {
+            confirmationPending: { placeId: topResult.place_id, name: confirmName, address: confirmAddress, city: practiceCity }
+          });
+          confirmationMsg = `Found ${confirmName} at ${confirmAddress} — is that the right one?`;
+          console.log(`[AiGen] Address confirmation queued for ${contactId}: ${confirmName}`);
         } else {
           console.log(`[AiGen] No listing found for "${searchQuery}" — skipping confirmation`);
           startResearchAndScan(contactId, practiceName, practiceStreet, practiceCity, null);
-          if (contactVariant !== 'E') scheduleAiResponseAfterResearch(contactId, resolvedConvId);
+          scheduleAiResponseAfterResearch(contactId, resolvedConvId);
         }
       } catch (err) {
         console.error('[AiGen] Fast lookup error:', err.message);
         startResearchAndScan(contactId, practiceName, practiceStreet, practiceCity, null);
-        if (contactVariant !== 'E') scheduleAiResponseAfterResearch(contactId, resolvedConvId);
+        scheduleAiResponseAfterResearch(contactId, resolvedConvId);
       }
     } else {
       startResearchAndScan(contactId, practiceName, practiceStreet, practiceCity, null);
-      if (contactVariant !== 'E') scheduleAiResponseAfterResearch(contactId, resolvedConvId);
+      scheduleAiResponseAfterResearch(contactId, resolvedConvId);
     }
   }
 
@@ -1641,38 +1559,12 @@ async function generateAndSendAiReply(contactId, resolvedConvId, opts = {}) {
 
   // Update step
   if (detectedStep !== null) {
-    const stepUpdates = { currentStep: detectedStep };
-    // Variant E branch lock: the first time a branch-range step marker
-    // (>= 10) is detected, stamp the branch letter onto the contact.
-    // From this point on buildVariantESystemPrompt() routes by the lock,
-    // not by currentStep, so an out-of-sequence step marker (retry,
-    // hallucination) cannot flip the active branch script mid-conversation.
-    if (contactVariant === 'E' && !fresh?.variantEBranch) {
-      const branch = _variantEBranchForStep(detectedStep);
-      if (branch) {
-        stepUpdates.variantEBranch = branch;
-        console.log(`[VariantE] Branch lock set to ${branch} for ${contactId} at step ${detectedStep}`);
-      }
-    }
-    conversations.update(contactId, stepUpdates);
+    conversations.update(contactId, { currentStep: detectedStep });
   }
 
   // Persisted step: prefer Claude's marker, fall back to the contact's last
   // known step so brain/followups never receive null when we have prior state.
   const persistStep = detectedStep ?? fresh?.currentStep ?? null;
-
-  // Variant E: inject VSL URL into [Link] placeholder.
-  // Resolved from VARIANT_E_VSL_URL env var then conversationPrompt.E.vslUrl prompt key.
-  // Fail-closed: no send if neither is configured (prevents broken message).
-  if (contactVariant === 'E' && reply.includes('[Link]')) {
-    const vslUrl = process.env.VARIANT_E_VSL_URL || prompts.get('conversationPrompt.E.vslUrl') || '';
-    if (vslUrl) {
-      reply = reply.replace(/\[Link\]/gi, vslUrl);
-    } else {
-      console.error(`[AiGen] Variant E video step blocked for ${contactId}: no VSL URL configured`);
-      reply = '';
-    }
-  }
 
   // Send reply via GHL and persist
   if (reply) {
@@ -1685,38 +1577,8 @@ async function generateAndSendAiReply(contactId, resolvedConvId, opts = {}) {
       variant: contactVariant
     });
     brain.recordOutbound(contactId, reply, persistStep, { variant: contactVariant });
-    // Variant E video link steps (12/32/52/72): suppress the normal 5-minute
-    // silence nudge. The only planned follow-up for prospects who haven't booked
-    // after receiving the video is the Data Payload (scheduled below). Scheduling
-    // both would send two unsolicited follow-ups, which violates the spec.
-    const isVariantEVideoStep = contactVariant === 'E' && [12, 32, 52, 72].includes(detectedStep);
-    if (!isVariantEVideoStep) {
-      followups.scheduleSilenceCheck(contactId, persistStep, reply);
-    }
+    followups.scheduleSilenceCheck(contactId, persistStep, reply);
     console.log(`[AiGen] Sent to ${contactId} (step ${persistStep}, variant ${contactVariant || 'none'}): "${reply.slice(0, 80)}"`);
-
-    // Variant E: schedule Data Payload follow-up 15–20 min after video link steps.
-    // Deduplicate: skip if a pending or sent data-payload job already exists for
-    // this contact (e.g. hesitation handler fires step 12 while a job is pending).
-    if (contactVariant === 'E' && [12, 32, 52, 72].includes(detectedStep)) {
-      const existingDataPayload = followups.getAllJobs().find(
-        j => j.contactId === contactId && j.type === 'data-payload' &&
-             (j.status === 'pending' || j.status === 'sent')
-      );
-      if (!existingDataPayload) {
-        const delayMs = (15 + Math.random() * 5) * 60 * 1000;
-        followups.scheduleJob({
-          contactId,
-          type: 'data-payload',
-          position: 1,
-          sendAt: Date.now() + delayMs,
-          context: { variant: 'E', videoStep: detectedStep, retries: 0 }
-        });
-        console.log(`[DataPayload] Scheduled for ${contactId} in ~${Math.round(delayMs / 60000)} min (after step ${detectedStep})`);
-      } else {
-        console.log(`[DataPayload] Skipping schedule for ${contactId} — job already exists (${existingDataPayload.status})`);
-      }
-    }
   }
 
   // Send address confirmation (if queued from PRACTICE_DETECTED)
@@ -2999,26 +2861,6 @@ app.get('/api/brain/variants', requireAdmin, async (req, res) => {
       config.SCRIPTED_VARIANTS.map(v => [v, prompts.get(`conversationPrompt.${v}`) ? `conversationPrompt.${v}` : 'conversationPrompt'])
     );
 
-    // Variant E uses modular sub-prompts. Concatenate all parts for step
-    // description extraction so the funnel can label steps 1-3 (opening)
-    // and branch steps (10-89 map onto step 7+ in the clamped funnel).
-    function _extractStepDescsFromText(text) {
-      const desc = {};
-      const re = /^STEP\s+(\d+)(.*?)$/gim;
-      let m;
-      while ((m = re.exec(text)) !== null) {
-        const n = parseInt(m[1], 10);
-        if (desc[n]) continue;
-        let label = m[2].trim().replace(/^[\s\u2014\-:]+/, '').replace(/:+$/, '').trim();
-        if (label.startsWith('(') && label.includes(')')) {
-          label = label.slice(1, label.indexOf(')')).trim();
-        }
-        if (label.length > 80) label = label.slice(0, 77) + '...';
-        desc[n] = label;
-      }
-      return desc;
-    }
-
     const stepDescs = {
       ...Object.fromEntries(config.SCRIPTED_VARIANTS.map(v => [v, _extractStepDescs(variantPromptKeys[v])]))
     };
@@ -3176,8 +3018,6 @@ function _buildPlaygroundSystemPrompt(session) {
   let systemContent;
   if (session.variant === 'CUSTOM') {
     systemContent = String(session.customPrompt || '').trim();
-  } else if (session.variant === 'E' && !variantBuilder.getVariant('E')) {
-    systemContent = buildVariantESystemPrompt(session.currentStep || 0);
   } else {
     systemContent = resolveVariantPrompt(session.variant);
   }
@@ -3472,7 +3312,7 @@ function _normalizePlaygroundVariant(variant, customPrompt) {
   // FIRST so existing callers passing 'a'/'b'/etc. continue to map to the
   // legacy uppercase variant even if a structured variant happens to share a
   // single-letter id. (Structured ids are conventionally multi-char like 'D1'.)
-  const _validLegacy = [...config.SCRIPTED_VARIANTS, 'E'];
+  const _validLegacy = [...config.SCRIPTED_VARIANTS];
   if (_validLegacy.includes(v)) return { variant: v };
 
   // Accept any structured variant id (case-preserved) built via the Variant
@@ -3546,7 +3386,7 @@ app.post('/admin/playground/message', requireAdmin, async (req, res) => {
     // mid-conversation. If so, fail loud rather than silently falling through
     // to a default prompt inside _buildPlaygroundSystemPrompt.
     if (session.variant && session.variant !== 'CUSTOM') {
-      const legacyOk = [...config.SCRIPTED_VARIANTS, 'E'].includes(session.variant);
+      const legacyOk = [...config.SCRIPTED_VARIANTS].includes(session.variant);
       const structuredOk = !!variantBuilder.getVariant(session.variant);
       if (!legacyOk && !structuredOk) {
         return res.status(409).json({
@@ -4202,17 +4042,6 @@ app.listen(PORT, () => {
       // optouts.variant column existed.
       optouts.backfillVariants().catch(err =>
         console.error('[Optouts] Backfill failed:', err.message));
-
-      // Variant E VSL URL check: warn if E is enabled but the URL has been
-      // cleared to empty. The default ships as a placeholder; replace it with
-      // the real URL via VARIANT_E_VSL_URL (env) or conversationPrompt.E.vslUrl.
-      const isEEnabled = prompts.getEnabledVariants().includes('E');
-      const vslUrlConfigured = !!(process.env.VARIANT_E_VSL_URL || prompts.get('conversationPrompt.E.vslUrl'));
-      if (isEEnabled && !vslUrlConfigured) {
-        console.error('[VariantE] WARNING: Variant E is enabled but conversationPrompt.E.vslUrl is empty.');
-        console.error('[VariantE]   → Set VARIANT_E_VSL_URL env var or update conversationPrompt.E.vslUrl');
-        console.error('[VariantE]     in the admin prompt editor with the real video URL before going live.');
-      }
     })
     .catch(err => console.error('[Bootstrap] Error:', err.message));
 });
@@ -5446,7 +5275,7 @@ async function loadBrain() {
               </div>
               <div style="margin-top:14px;border-top:1px solid rgba(203,213,225,.4);padding-top:12px">
                 <div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Variant Notes</div>
-                \${vData.variants.filter(v => v.variant !== 'E').map(v => \`
+                \${vData.variants.map(v => \`
                   <div style="margin-bottom:4px">
                     <button class="vnotes-toggle" onclick="toggleVNotes('\${v.variant}')" id="vnbtn-\${v.variant}">
                       <svg width="12" height="12" viewBox="0 0 20 20" fill="currentColor" id="vnarrow-\${v.variant}" style="transform:rotate(-90deg);transition:transform .15s"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>
