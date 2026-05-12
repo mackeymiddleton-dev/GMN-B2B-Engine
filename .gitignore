@@ -4,3 +4,4 @@ data/sessions.json
 .local/state/
 winning-patterns.json
 data/conversations.json
+.claude/
